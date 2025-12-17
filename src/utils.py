@@ -124,18 +124,16 @@ def calculate_returns(
 def calculate_log_returns(price_data, freq=1):
     """compute the log returns given a price dataframe"""
     # compute the log returns
-    returns_dataframe = price_data.apply(np.log) - price_data.shift(freq).apply(np.log)
-    returns_dataframe = returns_dataframe.dropna(how="all")
-    returns_dataframe = returns_dataframe.fillna(0)
+    returns_dataframe = np.log(price_data / price_data.shift(freq))
 
-    return returns_dataframe
+    return returns_dataframe.dropna(how="all").fillna(0)
 
 
 def compute_abs_returns(price_data, freq=1):
     """
-    compute the absolute returns using freq. For example, freq = 1 means today - yesterday.
+    compute the simple returns using freq. For example, freq = 1 means today - yesterday.
     """
-    returns_dataframe = price_data.diff(freq)
+    returns_dataframe = price_data.pct_change(freq)
     returns_dataframe = returns_dataframe.dropna(how="all")
     returns_dataframe = returns_dataframe.fillna(0)
 

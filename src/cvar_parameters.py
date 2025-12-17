@@ -52,6 +52,44 @@ class CvarParameters:
     #   'tickers': tickers
     #   'weight_bounds': {'w_min': w_min, 'w_max': w_max}}]
 
+    def __post_init__(self) -> None:
+        """Validate initial parameter values."""
+        self._validate_c_min(self.c_min)
+        self._validate_c_max(self.c_max)
+        self._validate_risk_aversion(self.risk_aversion)
+        self._validate_confidence(self.confidence)
+        if self.cardinality is not None:
+            self._validate_cardinality(self.cardinality)
+
+    # --- Validation helpers ---
+
+    @staticmethod
+    def _validate_c_min(value: float) -> None:
+        if value < 0:
+            raise ValueError("Cash lower bound (c_min) must be non-negative.")
+
+    @staticmethod
+    def _validate_c_max(value: float) -> None:
+        if not (0 <= value <= 1):
+            raise ValueError("Cash upper bound (c_max) must be in [0, 1].")
+
+    @staticmethod
+    def _validate_risk_aversion(value: float) -> None:
+        if value < 0:
+            raise ValueError("Risk aversion must be non-negative.")
+
+    @staticmethod
+    def _validate_confidence(value: float) -> None:
+        if not (0 < value <= 1):
+            raise ValueError(
+                "Confidence level must be in (0, 1], e.g. 0.95 for 95% CVaR."
+            )
+
+    @staticmethod
+    def _validate_cardinality(value: int) -> None:
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError("Cardinality must be a positive integer.")
+
     def update_w_min(self, new_w_min: Union[np.ndarray, dict, float]):
         self.w_min = new_w_min
 
@@ -62,16 +100,12 @@ class CvarParameters:
             raise ValueError("Invalid upper bound for weights!")
 
     def update_c_min(self, new_c_min: float):
-        if new_c_min >= 0:
-            self.c_min = new_c_min
-        else:
-            raise ValueError("Cash should be non-negative!")
+        self._validate_c_min(new_c_min)
+        self.c_min = new_c_min
 
     def update_c_max(self, new_c_max: float):
-        if new_c_max >= 0 and new_c_max <= 1:
-            self.c_max = new_c_max
-        else:
-            raise ValueError("Invalid upper bound for cash!")
+        self._validate_c_max(new_c_max)
+        self.c_max = new_c_max
 
     def update_z_min(self, new_c_min: float):
         self.z_min = new_c_min
@@ -89,24 +123,14 @@ class CvarParameters:
         self.cvar_limit = new_cvar_limit
 
     def update_cardinality(self, new_cardinality: int):
-        if new_cardinality is None or (
-            isinstance(new_cardinality, int) and new_cardinality > 0
-        ):
-            self.cardinality = new_cardinality
-        else:
-            raise ValueError("Cardinality must be a positive integer or None")
+        if new_cardinality is not None:
+            self._validate_cardinality(new_cardinality)
+        self.cardinality = new_cardinality
 
     def update_risk_aversion(self, new_risk_aversion: float):
-        if new_risk_aversion >= 0:
-            self.risk_aversion = new_risk_aversion
-        else:
-            raise ValueError("Invalid risk aversion")
+        self._validate_risk_aversion(new_risk_aversion)
+        self.risk_aversion = new_risk_aversion
 
     def update_confidence(self, new_confidence: float):
-        if new_confidence > 0 and new_confidence <= 1:
-            self.confidence = new_confidence
-        else:
-            raise ValueError(
-                "Invalid confidence level (should be between 0 and 1, "
-                "e.g. 95%, 99%, etc.)"
-            )
+        self._validate_confidence(new_confidence)
+        self.confidence = new_confidence

@@ -69,6 +69,12 @@ def generate_samples_kde(
     bandwidth = kde_settings["bandwidth"]
     kernel = kde_settings["kernel"]
 
+    original_columns = returns_data.columns
+    non_constant_cols = returns_data.columns[returns_data.nunique() > 1]
+    constant_cols = returns_data.columns[returns_data.nunique() <= 1]
+    constant_values = {col: returns_data[col].iloc[0] for col in constant_cols}
+    returns_data = returns_data[non_constant_cols]
+
     if kde_device == "CPU":
         start_time = time.time()
         #fit kde and sample from it
@@ -90,7 +96,7 @@ def generate_samples_kde(
         kde = cuml.neighbors.KernelDensity(kernel=kernel, bandwidth=bandwidth).fit(
             returns_data
         )
-        new_samples = kde.sample(num_scen)  # convert to numpy array
+        new_samples = kde.sample(num_scen) 
 
         end_time = time.time()
         kde_time = end_time - start_time
@@ -100,7 +106,13 @@ def generate_samples_kde(
     else:
         raise ValueError("Invalid Device: CPU or GPU!")
 
-    return new_samples
+    # Re-insert constant columns at their original positions
+    new_samples_df = pd.DataFrame(new_samples, columns=non_constant_cols)
+    for col in constant_cols:
+        new_samples_df[col] = constant_values[col]
+    new_samples_df = new_samples_df.reindex(columns=original_columns)
+
+    return new_samples_df.to_numpy()
 
 
 def generate_cvar_data(returns_dict: dict, scenario_generation_settings: dict):
