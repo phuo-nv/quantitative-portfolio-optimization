@@ -101,6 +101,8 @@ def calculate_returns(
         returns_dataframe = input_data
     elif return_type == "LINEAR":
         returns_dataframe = compute_linear_returns(input_data, freq)
+    elif return_type == "ABSOLUTE":
+        returns_dataframe = compute_absolute_returns(input_data, freq)
     else:
         raise NotImplementedError("Invalid return type!")
 
@@ -131,9 +133,22 @@ def calculate_log_returns(price_data, freq=1):
 
 def compute_linear_returns(price_data, freq=1):
     """
-    compute the simple returns using freq. For example, freq = 1 means today - yesterday.
+    compute the simple returns using freq. For example, 
+    freq = 1 means (today - yesterday) / yesterday.
     """
     returns_dataframe = price_data.pct_change(freq)
+    returns_dataframe = returns_dataframe.dropna(how="all")
+    returns_dataframe = returns_dataframe.fillna(0)
+
+    return returns_dataframe
+
+
+def compute_absolute_returns(price_data, freq=1):
+    """
+    compute the absolute returns using freq. 
+    For example, freq = 1 means today - yesterday.
+    """
+    returns_dataframe = price_data.diff(freq)
     returns_dataframe = returns_dataframe.dropna(how="all")
     returns_dataframe = returns_dataframe.fillna(0)
 

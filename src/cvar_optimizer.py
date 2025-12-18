@@ -144,6 +144,7 @@ class CVaR(base_optimizer.BaseOptimizer):
                 "api": "cvxpy",
                 "weight_constraints_type": "bounds",
                 "cash_constraints_type": "bounds",
+                "scale_risk_aversion": True,
             }
 
         # Validate and store API settings
@@ -233,10 +234,6 @@ class CVaR(base_optimizer.BaseOptimizer):
             if pickle_path is not None and not isinstance(pickle_path, str):
                 raise ValueError("pickle_save_path must be a string if provided")
 
-            # Set defaults if not provided
-            api_settings.setdefault("weight_constraints_type", "bounds")
-            api_settings.setdefault("cash_constraints_type", "bounds")
-
     def _setup_optimization_problem(self):
         """
         Set up the optimization problem based on the selected API choice.
@@ -247,7 +244,9 @@ class CVaR(base_optimizer.BaseOptimizer):
         - Calls the appropriate API-specific setup method
         """
         set_up_start = time.time()  # Record setup start time
-        self._scale_risk_aversion()  # Adjust risk aversion parameter
+
+        if self.api_settings["scale_risk_aversion"]:
+            self._scale_risk_aversion()  # Adjust risk aversion parameter
 
         # Call the appropriate setup method based on API choice
         if self.api_choice == "cvxpy":
