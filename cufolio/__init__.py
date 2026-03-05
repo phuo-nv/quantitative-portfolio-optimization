@@ -29,6 +29,7 @@ __path__ = [_src_path]
 
 # Import from self (cufolio.xxx) so modules get __name__ like "cufolio.backtest"
 import cufolio.backtest as backtest
+import cufolio.base_parameters as base_parameters
 import cufolio.cvar_data as cvar_data
 import cufolio.cvar_optimizer as cvar_optimizer
 import cufolio.cvar_parameters as cvar_parameters
@@ -43,6 +44,7 @@ import cufolio.strategy_backtest as strategy_backtest
 import cufolio.utils as utils
 
 # Re-export commonly used classes
+from cufolio.base_parameters import BaseParameters
 from cufolio.cvar_parameters import CvarParameters
 from cufolio.mean_variance_parameters import MeanVarianceParameters
 from cufolio.settings import (
@@ -54,6 +56,7 @@ from cufolio.settings import (
 
 __all__ = [
     "backtest",
+    "base_parameters",
     "cvar_data",
     "cvar_optimizer",
     "cvar_parameters",
@@ -66,6 +69,7 @@ __all__ = [
     "settings",
     "strategy_backtest",
     "utils",
+    "BaseParameters",
     "CvarParameters",
     "MeanVarianceParameters",
     "ApiSettings",

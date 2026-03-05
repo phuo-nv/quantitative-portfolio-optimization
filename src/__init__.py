@@ -17,6 +17,7 @@
 
 version = "1.0.0"
 
+from .base_parameters import BaseParameters
 from .cvar_data import CvarData
 from .cvar_parameters import CvarParameters
 from .mean_variance_parameters import MeanVarianceParameters
@@ -28,6 +29,7 @@ from .settings import (
 )
 
 __all__ = [
+    "BaseParameters",
     "CvarData",
     "CvarParameters",
     "MeanVarianceParameters",
