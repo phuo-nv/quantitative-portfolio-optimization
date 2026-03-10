@@ -361,19 +361,19 @@ def create_rebalancing_progressive(
         )
 
         # Main loop (adapted from cufolio/rebalance.py)
-        # Create column names without duplicate pct_change
         metric_column = r.re_optimize_type
         results_df = pd.DataFrame(
             columns=[metric_column, "re_optimized", "portfolio_value", "max_drawdown"]
         )
-        current_portfolio = r.initial_portfolio  # set by baseline computation
-        prev_portfolio = None  # Initialize previous portfolio
+        current_portfolio = r.initial_portfolio
+        prev_portfolio = None
         portfolio_value = 1.0
         backtest_idx = 0
         backtest_date = r.trading_start
         backtest_final_date = pd.Timestamp(r.dates_range[-look_forward_window])
         period_counter = 0
         total_solve_time = 0.0
+        total_kde_time = 0.0
 
         # Track total elapsed time for real-time display
         start_time_overall = time.time()
@@ -501,10 +501,22 @@ def create_rebalancing_progressive(
                     dataset_path, opt_regime, returns_compute_settings
                 )
 
-                # Generate return scenarios
+                kde_t0 = time.time()
                 opt_returns = cvar_utils.generate_cvar_data(
                     opt_returns,
                     scenario_generation_settings
+                )
+                kde_elapsed = time.time() - kde_t0
+                total_kde_time += kde_elapsed
+
+                progress_queue.put(
+                    {
+                        "solver": solver_name,
+                        "status": "kde_timing",
+                        "kde_time": kde_elapsed,
+                        "total_kde_time": total_kde_time,
+                        "message": f"{solver_name}: KDE fit+sample {kde_elapsed:.3f}s",
+                    }
                 )
 
                 # For turnover constraint: pass existing portfolio if T_tar is enabled, None otherwise
@@ -743,6 +755,7 @@ def create_rebalancing_progressive(
                 "baseline_series": bh_series,
                 "fig": fig,
                 "total_solve_time": total_solve_time,
+                "total_kde_time": total_kde_time,
                 "total_elapsed_time": final_total_time,
                 "rebal_count": len(rebal_dates),
                 "error": None,
@@ -763,8 +776,9 @@ def create_rebalancing_progressive(
 def run_progressive_rebalancing(
     dataset_path: str,
     trading_range: tuple,
-    returns_compute_settings: dict,
-    scenario_generation_settings: dict,
+    returns_compute_settings,
+    gpu_scenario_settings,
+    cpu_scenario_settings,
     cvar_params: CvarParameters,
     look_back_window: int,
     look_forward_window: int,
@@ -875,7 +889,7 @@ def run_progressive_rebalancing(
             dataset_path,
             trading_range,
             returns_compute_settings,
-            scenario_generation_settings,
+            gpu_scenario_settings,
             gpu_cvar_params,
             gpu_settings,
             look_back_window,
@@ -900,7 +914,7 @@ def run_progressive_rebalancing(
             dataset_path,
             trading_range,
             returns_compute_settings,
-            scenario_generation_settings,
+            cpu_scenario_settings,
             cpu_cvar_params,
             cpu_settings,
             look_back_window,
@@ -984,6 +998,7 @@ def run_progressive_rebalancing(
                     "starting_optimization",
                     "reusing_baseline",
                     "applying_turnover",
+                    "kde_timing",
                 ]:
                     with gpu_progress_placeholder.container():
                         st.info(upd.get("message", ""))
@@ -1052,6 +1067,7 @@ def run_progressive_rebalancing(
                     "starting_optimization",
                     "reusing_baseline",
                     "applying_turnover",
+                    "kde_timing",
                 ]:
                     with cpu_progress_placeholder.container():
                         st.info(upd.get("message", ""))
@@ -1107,11 +1123,14 @@ def main():
 
     # Header
     st.markdown(
-        f'<div class="main-header"> {DefaultValues.BLUEPRINT_NAME} - Backtesting Rebalance Strategies</div>',
+        f'<div class="main-header">cuFOLIO - Backtesting Rebalance Strategies</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
-        "**Interactive dynamic rebalancing strategies with real-time GPU vs CPU comparison**"
+        '<p style="text-align:center; font-size:1.1rem; color:inherit; opacity:0.85;">'
+        "GPU-accelerated portfolio rebalancing with side-by-side solver comparison"
+        "</p>",
+        unsafe_allow_html=True,
     )
 
     if not IMPORTS_OK:
@@ -1125,333 +1144,255 @@ def main():
         )
 
         # Dataset selection
-        st.subheader(UIText.DATASET_HEADER)
+        st.subheader("📊 Dataset")
         datasets = get_available_datasets()
-        # Set default dataset if available, otherwise use first dataset
         default_index = (
             datasets.index(DefaultValues.DATASET_NAME)
             if DefaultValues.DATASET_NAME in datasets
             else 0
         )
-        dataset_name = st.selectbox("Dataset", datasets, index=default_index)
+        _dataset_labels = {ds: f"Dataset {i+1}" for i, ds in enumerate(datasets)}
+        dataset_name = st.selectbox(
+            "Dataset",
+            datasets,
+            index=default_index,
+            format_func=lambda x: _dataset_labels[x],
+        )
 
-        # Date range
         col1, col2 = st.columns(2)
         with col1:
             start_date = st.date_input("Start Date", value=DefaultValues.START_DATE)
         with col2:
             end_date = st.date_input("End Date", value=DefaultValues.END_DATE)
 
-        st.text_input("Regime Name", value=DefaultValues.REGIME_NAME)
-        return_type = st.selectbox(
-            "Return Type",
-            ["LOG", "SIMPLE"],
-            index=0 if DefaultValues.RETURN_TYPE == "LOG" else 1,
+        # Portfolio Constraints (user-friendly names with technical help)
+        st.subheader("💼 Portfolio Allocation")
+        w_min = st.slider(
+            "Min Allocation per Asset",
+            -0.5, 0.5, float(DefaultValues.W_MIN), 0.05,
+            help="Minimum weight (w_min) — minimum fraction of wealth allocated to any single asset. Negative values allow short selling.",
+        )
+        w_max = st.slider(
+            "Max Allocation per Asset",
+            0.0, 1.0, max(0.0, float(DefaultValues.W_MAX)), 0.05,
+            help="Maximum weight (w_max) — maximum fraction of wealth allocated to any single asset.",
+        )
+        c_min = st.slider(
+            "Min Cash Reserve",
+            0.0, 0.5, float(DefaultValues.C_MIN), 0.05,
+            help="Minimum cash (c_min) — minimum fraction of the portfolio held in cash.",
+        )
+        c_max = st.slider(
+            "Max Cash Reserve",
+            c_min, 1.0, float(DefaultValues.C_MAX), 0.05,
+            help="Maximum cash (c_max) — maximum fraction of the portfolio held in cash.",
+        )
+        L_tar = st.slider(
+            "Max Leverage",
+            1.0, 3.0, float(DefaultValues.L_TAR), 0.1,
+            help="Leverage target (L_tar) — upper bound on the sum of absolute position sizes. 1.0 = fully funded, >1 = leveraged.",
         )
 
-        # CVaR Parameters
-        st.subheader(UIText.CVAR_HEADER)
-        col1, col2 = st.columns(2)
-        with col1:
-            w_min = st.number_input(
-                "Min Weight",
-                value=DefaultValues.W_MIN,
-                min_value=InputLimits.W_MIN_RANGE[0],
-                max_value=InputLimits.W_MIN_RANGE[1],
-                step=InputLimits.W_STEP,
-            )
-            c_min = st.number_input(
-                "Min Cash",
-                value=DefaultValues.C_MIN,
-                min_value=InputLimits.C_MIN_RANGE[0],
-                max_value=InputLimits.C_MIN_RANGE[1],
-                step=InputLimits.C_STEP,
-            )
-            confidence = st.number_input(
-                "Confidence",
-                value=DefaultValues.CONFIDENCE,
-                min_value=InputLimits.CONFIDENCE_RANGE[0],
-                max_value=InputLimits.CONFIDENCE_RANGE[1],
-                step=InputLimits.CONFIDENCE_STEP,
-            )
-        with col2:
-            w_max = st.number_input(
-                "Max Weight",
-                value=DefaultValues.W_MAX,
-                min_value=w_min,
-                max_value=InputLimits.W_MAX_RANGE[1],
-                step=InputLimits.W_STEP,
-            )
-            c_max = st.number_input(
-                "Max Cash",
-                value=DefaultValues.C_MAX,
-                min_value=c_min,
-                max_value=InputLimits.C_MAX_RANGE[1],
-                step=InputLimits.C_STEP,
-            )
-            num_scen = st.number_input(
-                "Scenarios",
-                value=DefaultValues.NUM_SCEN,
-                min_value=InputLimits.NUM_SCEN_RANGE[0],
-                max_value=InputLimits.NUM_SCEN_RANGE[1],
-                step=InputLimits.NUM_SCEN_STEP,
-            )
-
-        L_tar = st.number_input(
-            "Leverage Target",
-            value=DefaultValues.L_TAR,
-            min_value=InputLimits.L_TAR_RANGE[0],
-            max_value=InputLimits.L_TAR_RANGE[1],
-            step=InputLimits.L_TAR_STEP,
+        use_cardinality = st.checkbox(
+            "Limit Number of Holdings",
+            help="Cardinality constraint — restricts the portfolio to a maximum number of assets with non-zero weights.",
         )
-        fit_type = st.selectbox(
-            "Fit Type",
-            ["kde", "empirical"],
-            index=0 if DefaultValues.FIT_TYPE == "kde" else 1,
-        )
-        kde_device = st.selectbox("KDE Device", ["GPU", "CPU"], index=1)
+        cardinality = st.slider("Max Holdings", 5, 50, 15, 1) if use_cardinality else None
 
-        # Rebalancing Strategy
-        st.subheader("🧭 Rebalancing Strategy")
+        # Risk Parameters
+        st.subheader("⚖️ Risk Settings")
+        risk_aversion = st.slider(
+            "Risk Sensitivity",
+            0.1, 5.0, float(DefaultValues.RISK_AVERSION), 0.1,
+            help="Risk aversion (λ) — controls the trade-off between return and risk. Higher values produce more conservative portfolios.",
+        )
+        confidence = st.slider(
+            "Tail-Risk Confidence",
+            0.90, 0.99, float(DefaultValues.CONFIDENCE), 0.01,
+            help="CVaR confidence level (α) — probability level for measuring tail risk. 0.95 means the worst 5%% of scenarios are considered.",
+        )
+        num_scen = st.selectbox(
+            "Simulation Count",
+            [1000, 5000, 10000, 20000],
+            index=2,
+            help="Number of scenarios (num_scen) — how many return scenarios to simulate for risk estimation.",
+        )
+
+        # Rebalancing Strategy (simplified)
+        st.subheader("🧭 Rebalancing Trigger")
         strategy_display = {
-            "pct_change": "Percentage Change",
-            "drift_from_optimal": "Drift from Optimal",
-            "max_drawdown": "Maximum Drawdown",
-            "no_re_optimize": "No Re-Optimization",
+            "pct_change": "Loss Threshold",
+            "drift_from_optimal": "Drift from Target",
+            "max_drawdown": "Peak-to-Trough Decline",
+            "no_re_optimize": "Buy & Hold (no rebalancing)",
         }
         strategy_key = st.selectbox(
-            "Strategy",
+            "When to Rebalance",
             list(strategy_display.keys()),
             index=0,
             format_func=lambda k: strategy_display[k],
+            help="Determines the condition that triggers portfolio re-optimization.",
         )
 
-        # Strategy information expandable section
-        with st.expander(f"ℹ️ About {strategy_display[strategy_key]}", expanded=False):
+        with st.expander(f"ℹ️ About: {strategy_display[strategy_key]}", expanded=False):
             if strategy_key == "pct_change":
                 st.markdown(
-                    """
-                **Percentage Change**
-
-                Rebalances the portfolio when the period return falls below a specified threshold.
-
-                **How it works:**
-                - Monitors portfolio performance each evaluation period
-                - Triggers rebalancing when returns drop below the threshold (e.g., -5%)
-                - Helps protect against significant losses by adapting to poor performance
-
-                **Best for:**
-                - Risk management during market downturns
-                - Portfolios sensitive to drawdowns
-                - Conservative rebalancing approach
-
-                **Example:** With threshold = -0.05, rebalancing occurs when portfolio loses more than 5% in a period.
-                """
+                    "Re-optimizes when the portfolio return in a period drops "
+                    "below a loss threshold (e.g. -0.5%). Useful for protecting "
+                    "against sustained poor performance."
                 )
             elif strategy_key == "drift_from_optimal":
                 st.markdown(
-                    """
-                **Drift from Optimal**
-
-                Rebalances when current portfolio weights deviate too much from the optimal allocation.
-
-                **How it works:**
-                - Calculates the distance between current and optimal weights
-                - Uses L1 (Manhattan) or L2 (Euclidean) norm to measure deviation
-                - Triggers rebalancing when drift exceeds the threshold
-
-                **Best for:**
-                - Maintaining target allocation discipline
-                - Portfolios with clear strategic targets
-                - Regular rebalancing to control drift
-
-                **Example:** With threshold = 0.002 and L2 norm, rebalancing occurs when weight deviation exceeds 0.2%.
-                """
+                    "Re-optimizes when the current weights drift too far from "
+                    "the target allocation. Keeps the portfolio disciplined."
                 )
             elif strategy_key == "max_drawdown":
                 st.markdown(
-                    """
-                **Maximum Drawdown**
-
-                Rebalances when portfolio experiences a significant peak-to-trough decline.
-
-                **How it works:**
-                - Tracks the maximum portfolio value achieved
-                - Calculates drawdown as decline from peak value
-                - Triggers rebalancing when drawdown exceeds threshold
-
-                **Best for:**
-                - Downside risk management
-                - Protecting against large losses
-                - Crisis-responsive rebalancing
-
-                **Example:** With threshold = 0.2, rebalancing occurs when portfolio drops 20% from its peak.
-                """
+                    "Re-optimizes after the portfolio suffers a peak-to-trough "
+                    "decline exceeding the threshold. Responds to crisis events."
                 )
-            else:  # no_re_optimize
+            else:
                 st.markdown(
-                    """
-                **No Re-Optimization**
-
-                Maintains initial portfolio allocation without any rebalancing.
-
-                **How it works:**
-                - Sets portfolio allocation once at the beginning
-                - Never triggers rebalancing regardless of performance
-                - Pure buy-and-hold strategy
-
-                **Best for:**
-                - Baseline comparison against active strategies
-                - Low-maintenance portfolios
-                - Testing the value of rebalancing
-
-                **Note:** This serves as a benchmark to compare against dynamic rebalancing strategies.
-                """
+                    "No rebalancing — the initial allocation is held throughout "
+                    "the entire period. Serves as a buy-and-hold baseline."
                 )
 
-        threshold = st.number_input(
-            "Threshold",
-            value=(
+        # ── Advanced Mode ──────────────────────────────────────────────
+        st.markdown("---")
+        advanced_mode = st.checkbox("⚙️ Advanced Mode", value=False)
+
+        if advanced_mode:
+            st.subheader("🔬 Advanced Settings")
+
+            return_type = st.selectbox(
+                "Return Calculation",
+                ["LOG", "SIMPLE"],
+                index=0 if DefaultValues.RETURN_TYPE == "LOG" else 1,
+                help="Return type — LOG (logarithmic) or SIMPLE (arithmetic) returns.",
+            )
+
+            st.markdown("**Trigger Threshold**")
+            threshold = st.number_input(
+                "Threshold",
+                value=(
+                    -0.005
+                    if strategy_key == "pct_change"
+                    else (0.002 if strategy_key == "drift_from_optimal" else 0.2)
+                ),
+                step=0.001,
+                format="%.6f",
+                help="Rebalancing trigger threshold — the value that must be breached to trigger re-optimization.",
+            )
+            norm_choice = None
+            if strategy_key == "drift_from_optimal":
+                norm_choice = st.selectbox(
+                    "Drift Norm",
+                    [1, 2],
+                    index=1,
+                    help="Distance metric — L1 (Manhattan) or L2 (Euclidean) norm.",
+                )
+
+            st.markdown("**Evaluation Windows**")
+            col1, col2 = st.columns(2)
+            with col1:
+                look_back_window = st.number_input(
+                    "History Window (days)",
+                    value=252,
+                    min_value=20,
+                    max_value=1250,
+                    step=10,
+                    help="Look-back window — number of historical trading days used to fit the optimization model.",
+                )
+            with col2:
+                look_forward_window = st.number_input(
+                    "Evaluation Period (days)",
+                    value=21,
+                    min_value=5,
+                    max_value=125,
+                    step=1,
+                    help="Look-forward window — number of trading days per evaluation period before checking the trigger.",
+                )
+            transaction_cost_factor = st.number_input(
+                "Trading Cost per Rebalance",
+                value=0.000,
+                min_value=0.0,
+                max_value=0.05,
+                step=0.001,
+                format="%.3f",
+                help="Transaction cost factor — fraction of turnover deducted as trading cost each time the portfolio is rebalanced.",
+            )
+
+            st.markdown("**Additional Constraints**")
+            enable_turnover = st.checkbox(
+                "Limit Turnover",
+                value=DefaultValues.ENABLE_TURNOVER_CONSTRAINT,
+                help="Turnover constraint (T_tar) — limits the total weight change between rebalances to control trading costs.",
+            )
+            turnover_limit = None
+            if enable_turnover:
+                turnover_limit = st.number_input(
+                    "Max Turnover",
+                    value=DefaultValues.TURNOVER_LIMIT,
+                    min_value=InputLimits.TURNOVER_LIMIT_RANGE[0],
+                    max_value=InputLimits.TURNOVER_LIMIT_RANGE[1],
+                    step=InputLimits.TURNOVER_LIMIT_STEP,
+                    format="%.3f",
+                    help="Turnover limit (T_tar) — maximum L1 distance between old and new weights.",
+                )
+
+            enable_cvar_limit = st.checkbox(
+                "Hard Risk Cap",
+                value=DefaultValues.ENABLE_CVAR_LIMIT,
+                help="Hard CVaR limit — sets an absolute upper bound on portfolio tail risk.",
+            )
+            cvar_hard_limit = None
+            if enable_cvar_limit:
+                cvar_hard_limit = st.number_input(
+                    "Max Tail Risk (CVaR)",
+                    value=DefaultValues.CVAR_HARD_LIMIT,
+                    min_value=InputLimits.CVAR_HARD_LIMIT_RANGE[0],
+                    max_value=InputLimits.CVAR_HARD_LIMIT_RANGE[1],
+                    step=InputLimits.CVAR_HARD_LIMIT_STEP,
+                    format="%.4f",
+                    help="CVaR hard limit — portfolio CVaR must stay below this value.",
+                )
+
+        else:
+            # Defaults for non-advanced mode
+            return_type = DefaultValues.RETURN_TYPE
+            threshold = (
                 -0.005
                 if strategy_key == "pct_change"
                 else (0.002 if strategy_key == "drift_from_optimal" else 0.2)
-            ),
-            step=0.001,
-            format="%.6f",
-        )
-        norm_choice = None
-        if strategy_key == "drift_from_optimal":
-            norm_choice = st.selectbox("Drift Norm", [1, 2], index=1)
-
-        # Windows & Costs
-        st.subheader("⏱️ Windows & Costs")
-        col1, col2 = st.columns(2)
-        with col1:
-            look_back_window = st.number_input(
-                "Look-back Window (days)",
-                value=252,
-                min_value=20,
-                max_value=1250,
-                step=10,
             )
-        with col2:
-            look_forward_window = st.number_input(
-                "Look-forward Window (days)",
-                value=21,
-                min_value=5,
-                max_value=125,
-                step=1,
-            )
-        transaction_cost_factor = st.number_input(
-            "Transaction Cost (fraction)",
-            value=0.000,
-            min_value=0.0,
-            max_value=0.05,
-            step=0.001,
-            format="%.3f",
-        )
+            norm_choice = 2 if strategy_key == "drift_from_optimal" else None
+            look_back_window = 252
+            look_forward_window = 21
+            transaction_cost_factor = 0.0
+            turnover_limit = None
+            enable_turnover = False
+            cvar_hard_limit = None
+            enable_cvar_limit = False
 
-        # Optional Constraints
-        st.subheader(UIText.CONSTRAINTS_HEADER)
-
-        # Add educational info about constraints
-        with st.expander("ℹ️ Optional Constraints", expanded=False):
-            st.markdown(
-                """
-            **🔄 Turnover:** Limits portfolio weight changes between periods (controls transaction costs)
-
-            **🎯 Cardinality:** Limits number of assets with non-zero weights (creates focused portfolios, uses MILP)
-
-            **⚠️ Hard CVaR Limit:** Sets absolute upper bound on portfolio risk (stricter than risk aversion)
-
-            💡 **Note:** Constraints may increase solve times, especially cardinality.
-            """
-            )
-
-        # Turnover constraint
-        enable_turnover = st.checkbox(
-            "Turnover Constraint",
-            value=DefaultValues.ENABLE_TURNOVER_CONSTRAINT,
-            help=UIText.TURNOVER_CONSTRAINT_HELP,
-        )
-        turnover_limit = None
-        if enable_turnover:
-            turnover_limit = st.number_input(
-                "Turnover Limit (T_tar)",
-                value=DefaultValues.TURNOVER_LIMIT,
-                min_value=InputLimits.TURNOVER_LIMIT_RANGE[0],
-                max_value=InputLimits.TURNOVER_LIMIT_RANGE[1],
-                step=InputLimits.TURNOVER_LIMIT_STEP,
-                format="%.3f",
-            )
-
-        # Cardinality constraint
-        enable_cardinality = st.checkbox(
-            "Cardinality Constraint",
-            value=DefaultValues.ENABLE_CARDINALITY_CONSTRAINT,
-            help=UIText.CARDINALITY_CONSTRAINT_HELP,
-        )
-        cardinality_limit = None
-        if enable_cardinality:
-            num_assets_in_dataset = get_dataset_num_assets(dataset_name)
-            cardinality_limit = st.number_input(
-                "Max Assets",
-                value=min(DefaultValues.CARDINALITY_LIMIT, num_assets_in_dataset),
-                min_value=InputLimits.CARDINALITY_LIMIT_RANGE[0],
-                max_value=num_assets_in_dataset,
-                step=InputLimits.CARDINALITY_LIMIT_STEP,
-            )
-
-        # Hard CVaR limit
-        enable_cvar_limit = st.checkbox(
-            "Hard CVaR Limit",
-            value=DefaultValues.ENABLE_CVAR_LIMIT,
-            help=UIText.CVAR_LIMIT_HELP,
-        )
-        cvar_hard_limit = None
-        if enable_cvar_limit:
-            cvar_hard_limit = st.number_input(
-                "CVaR Limit",
-                value=DefaultValues.CVAR_HARD_LIMIT,
-                min_value=InputLimits.CVAR_HARD_LIMIT_RANGE[0],
-                max_value=InputLimits.CVAR_HARD_LIMIT_RANGE[1],
-                step=InputLimits.CVAR_HARD_LIMIT_STEP,
-                format="%.4f",
-            )
-
-
-
-        # Display Mode (moved before CPU solver to check blog_mode first)
+        # CPU solver selection (always visible, masked names)
         st.markdown("---")
-        st.subheader("📝 Display Mode")
-        blog_mode = st.checkbox(
-            "Blog Mode",
-            value=True,
-            help="When enabled, hides CPU solver names in plot titles for cleaner presentation",
+        _cpu_solvers = {"HIGHS": "CPU Solver 1", "CLARABEL": "CPU Solver 2"}
+        cpu_solver_choice = st.selectbox(
+            "CPU Solver",
+            list(_cpu_solvers.keys()),
+            index=0,
+            format_func=lambda x: _cpu_solvers[x],
+            help="Choose which CPU optimization engine to compare against GPU.",
         )
 
-        # CPU solver selection (hidden in blog mode, defaults to HIGHS)
-        if blog_mode:
-            cpu_solver_choice = "HIGHS"
-        else:
-            # Solver comparison info
-            st.subheader(UIText.SOLVER_HEADER)
-            cpu_solver_choice = st.selectbox(
-                "CPU Solver",
-                list(SolverConfig.CPU_SOLVER_OPTIONS.keys()),
-                index=list(SolverConfig.CPU_SOLVER_OPTIONS.keys()).index(
-                    SolverConfig.DEFAULT_CPU_SOLVER
-                ),
-                format_func=lambda x: SolverConfig.CPU_SOLVER_OPTIONS[x],
-                help=UIText.CPU_SOLVER_HELP,
-            )
+        blog_mode = True
 
         # Run button
         st.markdown("---")
         run_btn = st.button(
-            UIText.RUN_BUTTON.replace("Generate Efficient Frontier", "Run Rebalancing"),
+            "🚀 Run Rebalancing",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         )
 
     # Main content
@@ -1465,15 +1406,21 @@ def main():
         returns_compute_settings = ReturnsComputeSettings(
             return_type=return_type, freq=1
         )
-        scenario_generation_settings = ScenarioGenerationSettings(
+        gpu_scenario_settings = ScenarioGenerationSettings(
             num_scen=num_scen,
             fit_type='kde',
             kde_settings=KDESettings(
-                bandwidth=0.01,
-                kernel='gaussian',
-                device=kde_device
+                bandwidth=0.01, kernel='gaussian', device='GPU'
             ),
-            verbose=False
+            verbose=False,
+        )
+        cpu_scenario_settings = ScenarioGenerationSettings(
+            num_scen=num_scen,
+            fit_type='kde',
+            kde_settings=KDESettings(
+                bandwidth=0.01, kernel='gaussian', device='CPU'
+            ),
+            verbose=False,
         )
 
         # Prepare parameters
@@ -1484,11 +1431,11 @@ def main():
             c_min=c_min,
             c_max=c_max,
             L_tar=L_tar,
-            T_tar=turnover_limit,  # Use optional turnover constraint
-            cvar_limit=cvar_hard_limit,  # Use optional hard CVaR limit
-            risk_aversion=DefaultValues.RISK_AVERSION,  # Use default risk aversion
+            T_tar=turnover_limit,
+            cvar_limit=cvar_hard_limit,
+            risk_aversion=risk_aversion,
             confidence=confidence,
-            cardinality=cardinality_limit,  # Use optional cardinality constraint
+            cardinality=cardinality,
         )
 
         criteria = {"type": strategy_key, "threshold": float(threshold)}
@@ -1520,7 +1467,8 @@ def main():
             dataset_path=str(dataset_path),
             trading_range=trading_range,
             returns_compute_settings=returns_compute_settings,
-            scenario_generation_settings=scenario_generation_settings,
+            gpu_scenario_settings=gpu_scenario_settings,
+            cpu_scenario_settings=cpu_scenario_settings,
             cvar_params=cvar_params,
             look_back_window=int(look_back_window),
             look_forward_window=int(look_forward_window),
@@ -1559,10 +1507,12 @@ def main():
         with col2:
             if g.get("success"):
                 st.metric("⚡ GPU Solve Time", f"{g.get('total_solve_time', 0.0):.3f}s")
+                st.metric("🔬 GPU KDE Time", f"{g.get('total_kde_time', 0.0):.3f}s")
             else:
                 st.error("GPU failed")
             if c.get("success"):
                 st.metric("⚡ CPU Solve Time", f"{c.get('total_solve_time', 0.0):.3f}s")
+                st.metric("🔬 CPU KDE Time", f"{c.get('total_kde_time', 0.0):.3f}s")
             else:
                 st.error("CPU failed")
 
@@ -1588,77 +1538,91 @@ def main():
                 )
 
     else:
-        # Show instructions
-        st.info(
-            UIText.CONFIGURE_INSTRUCTION.replace(
-                "Generate Efficient Frontier", "Run Rebalancing"
-            )
-        )
+        # Landing page
+        cover_path = script_dir / "diagrams" / "fsi-visual-portfolio-optimization-blueprint-4539200-r2.png"
+        arch_path = script_dir / "diagrams" / "arch_diagram.svg"
+        gif_path = script_dir / "diagrams" / "rebalancing_gpu_vs_cpu.gif"
+
+        if cover_path.exists():
+            st.image(str(cover_path), width="stretch")
 
         st.markdown(
             """
-        ### **Features:**
-        - **Progressive Racing**: Both GPU and CPU solvers start simultaneously for fair comparison
-        - **Multiple CPU Solvers**: Choose from HIGHS, CLARABEL, ECOS, OSQP, or SCS
-        - **Real-Time Visualization**: See portfolio performance and rebalancing events as they happen
-        - **Multiple Strategies**: Percentage change, drift from optimal, maximum drawdown triggers
-        - **Period-by-Period Updates**: Track when re-optimization is triggered and portfolio updates
-        - **Transaction Costs**: Model realistic trading costs in the backtest
-        - **Live Metrics**: Real-time solve times, progress tracking, and performance comparison
+### Dynamic Portfolio Rebalancing
 
-        ### **How it works:**
-        1. **Setup**: Configure your dataset, date range, CVaR parameters, and rebalancing strategy
-        2. **Strategy Selection**: Choose trigger type (pct change, drift, drawdown) and threshold
-        3. **Windows**: Set look-back (optimization) and look-forward (backtest) periods
-        4. **Synchronized Start**: Both solvers initialize, then begin racing simultaneously
-        5. **Progressive Updates**: Watch period-by-period as strategies evolve and trigger rebalancing
-        6. **Performance Tracking**: Compare GPU vs CPU speed and final portfolio performance
-        """
+Simulate **rebalancing strategies** that re-optimize your portfolio
+when market conditions change — then watch GPU and CPU solvers race
+through the backtest in real time.
+
+Choose a trigger in the sidebar, set your constraints, and click
+**Run Rebalancing**.
+"""
         )
 
-        # Show example strategies
-        with st.expander("📋 Example Strategy Configurations", expanded=False):
+        # GIF demo (use HTML to ensure animation plays)
+        if gif_path.exists():
+            st.markdown("#### GPU vs CPU — Live Demo")
+            import base64
+            gif_bytes = gif_path.read_bytes()
+            gif_b64 = base64.b64encode(gif_bytes).decode()
             st.markdown(
-                """
-            **Conservative (Low Rebalancing):**
-            - Strategy: Percentage Change
-            - Threshold: -0.01 (rebalance after 1% loss)
-            - Look-back: 252 days (1 year of data)
-            - Look-forward: 21 days (monthly evaluation)
-
-            **Moderate (Medium Rebalancing):**
-            - Strategy: Drift from Optimal
-            - Threshold: 0.002 (rebalance when portfolio drifts)
-            - Norm: L2 (Euclidean distance)
-            - Look-back: 126 days (6 months)
-            - Look-forward: 14 days (bi-weekly)
-
-            **Aggressive (High Rebalancing):**
-            - Strategy: Maximum Drawdown
-            - Threshold: 0.05 (rebalance after 5% drawdown)
-            - Look-back: 63 days (3 months)
-            - Look-forward: 7 days (weekly evaluation)
-            """
+                f'<img src="data:image/gif;base64,{gif_b64}" style="width:100%;">',
+                unsafe_allow_html=True,
             )
 
-        # Advanced settings info
-        with st.expander("⚙️ Parameter Guidelines", expanded=False):
-            st.markdown(
-                """
-            **Look-back Window:** Historical data for portfolio optimization
-            - Longer periods (252+ days): More stable, slower adaptation
-            - Shorter periods (63-126 days): More responsive, potentially noisier
+        # Architecture
+        st.markdown("---")
+        st.markdown("#### Architecture")
+        if arch_path.exists():
+            st.image(str(arch_path), width="stretch")
 
-            **Look-forward Window:** Period between strategy evaluations
-            - Daily (1-7 days): High frequency, more trading costs
-            - Weekly/Monthly (7-30 days): Lower frequency, practical for real trading
+        # Dataset summary and price chart
+        st.markdown("---")
+        st.markdown("#### Selected Dataset")
+        dataset_path = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
+        if dataset_path.exists():
+            try:
+                df = pd.read_csv(dataset_path, index_col=0, parse_dates=True)
+                tickers = list(df.columns)
 
-            **Thresholds:**
-            - Percentage Change: Negative values (-0.001 to -0.05)
-            - Drift from Optimal: Small positive values (0.001 to 0.01)
-            - Maximum Drawdown: Positive values (0.01 to 0.2)
-            """
-            )
+                mask = (df.index >= pd.Timestamp(start_date)) & (df.index <= pd.Timestamp(end_date))
+                df_filtered = df.loc[mask]
+                if df_filtered.empty:
+                    df_filtered = df
+
+                col_s1, col_s2, col_s3 = st.columns(3)
+                with col_s1:
+                    st.metric("Assets", len(tickers))
+                with col_s2:
+                    st.metric("From", f"{df_filtered.index.min().strftime('%Y-%m-%d')}")
+                with col_s3:
+                    st.metric("To", f"{df_filtered.index.max().strftime('%Y-%m-%d')}")
+
+                fig, ax = plt.subplots(figsize=(14, 5), dpi=150)
+                normalised = df_filtered.div(df_filtered.iloc[0])
+                for col in normalised.columns:
+                    ax.plot(normalised.index, normalised[col], linewidth=0.8, alpha=0.7)
+                ax.set_title(
+                    f"{_dataset_labels.get(dataset_name, 'Dataset')} — Normalised Closing Prices",
+                    fontsize=14, fontweight="bold",
+                )
+                ax.set_ylabel("Price (normalised to 1)")
+                ax.set_xlabel("")
+                ax.grid(True, alpha=0.25)
+                ax.spines["top"].set_visible(False)
+                ax.spines["right"].set_visible(False)
+                fig.tight_layout()
+                st.pyplot(fig)
+                plt.close(fig)
+            except Exception as e:
+                st.warning(f"Could not load dataset preview: {e}")
+        else:
+            st.info(f"**{_dataset_labels.get(dataset_name, 'Dataset')}** not found on disk.")
+
+        st.info(
+            "👈 **Configure parameters in the sidebar and click "
+            "'Run Rebalancing' to start.**"
+        )
 
     # Add disclaimer at the bottom
     st.markdown("---")

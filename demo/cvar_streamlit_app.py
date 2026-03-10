@@ -617,7 +617,7 @@ def format_optimization_results(results, portfolio, optimizer, solve_time):
 
 # Main Streamlit App
 def main():
-    st.title("📈 Portfolio Optimizer")
+    st.title("📈 cuFOLIO Portfolio Optimizer")
 
     # Sidebar for parameters
     with st.sidebar:
@@ -908,38 +908,35 @@ def main():
             "🚀 Run Optimization", type="primary", width="stretch"
         )
 
-    # Main content area with GPU vs CPU comparison
-    gpu_col, cpu_col = st.columns([1, 1])
-
-    with gpu_col:
-        st.markdown('<div class="gpu-section">', unsafe_allow_html=True)
-        st.subheader("🚀 GPU Solver (cuOpt)")
-        gpu_progress_placeholder = st.empty()
-        st.markdown("**📊 Portfolio Visualization**")
-        gpu_portfolio_placeholder = st.empty()
-        st.markdown("**📈 Optimization Results**")
-        gpu_results_placeholder = st.empty()
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with cpu_col:
-        st.markdown('<div class="cpu-section">', unsafe_allow_html=True)
-        # In blog mode, hide CPU solver name
-        cpu_header = (
-            "💻 CPU Solver" if blog_mode else f"💻 CPU Solver ({cpu_solver_choice})"
-        )
-        st.subheader(cpu_header)
-        cpu_progress_placeholder = st.empty()
-        st.markdown("**📊 Portfolio Visualization**")
-        cpu_portfolio_placeholder = st.empty()
-        st.markdown("**📈 Optimization Results**")
-        cpu_results_placeholder = st.empty()
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # Progress and status
-    status_placeholder = st.empty()
-
     # Run optimization when button is pressed
     if optimize_button:
+        # Main content area with GPU vs CPU comparison
+        gpu_col, cpu_col = st.columns([1, 1])
+
+        with gpu_col:
+            st.markdown('<div class="gpu-section">', unsafe_allow_html=True)
+            st.subheader("🚀 GPU Solver (cuOpt)")
+            gpu_progress_placeholder = st.empty()
+            st.markdown("**📊 Portfolio Visualization**")
+            gpu_portfolio_placeholder = st.empty()
+            st.markdown("**📈 Optimization Results**")
+            gpu_results_placeholder = st.empty()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with cpu_col:
+            st.markdown('<div class="cpu-section">', unsafe_allow_html=True)
+            cpu_header = (
+                "💻 CPU Solver" if blog_mode else f"💻 CPU Solver ({cpu_solver_choice})"
+            )
+            st.subheader(cpu_header)
+            cpu_progress_placeholder = st.empty()
+            st.markdown("**📊 Portfolio Visualization**")
+            cpu_portfolio_placeholder = st.empty()
+            st.markdown("**📈 Optimization Results**")
+            cpu_results_placeholder = st.empty()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        status_placeholder = st.empty()
         with status_placeholder.container():
             st.info("🔄 Starting GPU vs CPU solver comparison...")
             progress_bar = st.progress(0)
@@ -1267,6 +1264,54 @@ def main():
 
                 st.text("Debug info:")
                 st.text(traceback.format_exc())
+
+    else:
+        # Landing page
+        script_dir = Path(__file__).parent
+        cover_path = script_dir / "diagrams" / "fsi-visual-portfolio-optimization-blueprint-4539200-r2.png"
+        arch_path = script_dir / "diagrams" / "arch_diagram.png"
+
+        if cover_path.exists():
+            st.image(str(cover_path), width="stretch")
+
+        st.markdown(
+            """
+### Quantitative Portfolio Optimization
+
+Whether you are constructing a new portfolio or rebalancing an existing one,
+this tool helps you find optimal asset allocations that balance expected
+returns against downside risk.
+
+**Choose your optimization method** in the sidebar:
+
+- **Mean-CVaR** — controls tail risk by minimizing Conditional Value-at-Risk,
+  ideal when you need to guard against extreme market losses.
+- **Mean-Variance** — the classic Markowitz framework that minimizes portfolio
+  variance, well-suited for normally distributed return assumptions.
+
+Configure your dataset, date range, constraints, and risk parameters in the
+sidebar, then click **Run Optimization** to see results.
+"""
+        )
+
+        st.markdown("---")
+        st.markdown("### Architecture")
+        st.markdown(
+            """
+The pipeline flows from raw market data through returns forecasting and
+scenario generation to the optimizer, which produces an optimal allocation
+strategy. The strategy is then backtested against historical data to
+validate performance before deployment.
+"""
+        )
+
+        if arch_path.exists():
+            st.image(str(arch_path), width="stretch")
+
+        st.info(
+            "👈 **Configure parameters in the sidebar and click "
+            "'Run Optimization' to start.**"
+        )
 
 
 if __name__ == "__main__":
