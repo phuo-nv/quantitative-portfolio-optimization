@@ -27,6 +27,7 @@ Author: phuo-nv
 from __future__ import annotations
 
 import copy
+import multiprocessing as mp
 import queue
 import sys
 import threading
@@ -814,6 +815,428 @@ def create_rebalancing_progressive(
         result_queue.put(_create_error_result(solver_name, traceback.format_exc()))
 
 
+# ---------------------------------------------------------------------------
+# Subprocess-isolated CPU worker (no matplotlib, no CUDA)
+# ---------------------------------------------------------------------------
+
+def _resolve_cpu_solver(solver_key: str):
+    """Resolve a solver string key to a cvxpy solver object inside the subprocess."""
+    import cvxpy as _cp
+    _map = {
+        "HIGHS": _cp.HIGHS,
+        "CLARABEL": _cp.CLARABEL,
+        "ECOS": _cp.ECOS,
+        "OSQP": _cp.OSQP,
+        "SCS": _cp.SCS,
+    }
+    return _map.get(solver_key, _cp.HIGHS)
+
+
+def create_rebalancing_cpu_worker(
+    dataset_path: str,
+    trading_range: tuple,
+    returns_compute_settings_dict: dict,
+    scenario_generation_settings_dict: dict,
+    cvar_params_dict: dict,
+    solver_key: str,
+    look_back_window: int,
+    look_forward_window: int,
+    re_optimize_criteria: dict,
+    transaction_cost_factor: float,
+    solver_name: str,
+    mp_queue: "mp.Queue",
+):
+    """CPU rebalancing worker that runs in a separate subprocess.
+
+    Sends only serializable data (no matplotlib figures) through mp_queue.
+    """
+    try:
+        import numpy as _np
+        import pandas as _pd
+
+        # Lazy imports inside subprocess to avoid CUDA contamination
+        _script_dir = Path(__file__).parent.absolute()
+        _workspace_root = _script_dir.parent
+        sys.path.insert(0, str(_workspace_root))
+
+        from cufolio import backtest, cvar_optimizer, cvar_utils, rebalance, utils
+        from cufolio.cvar_parameters import CvarParameters
+        from cufolio.settings import ReturnsComputeSettings, ScenarioGenerationSettings
+
+        # Reconstruct Pydantic objects from dicts
+        _returns_compute_settings = ReturnsComputeSettings(**returns_compute_settings_dict)
+        _scenario_settings = ScenarioGenerationSettings(**scenario_generation_settings_dict)
+        _cvar_params = CvarParameters(**cvar_params_dict)
+        _solver_settings = {"solver": _resolve_cpu_solver(solver_key), "verbose": False}
+
+        mp_queue.put({"status": "initializing", "solver": solver_name,
+                       "message": f"{solver_name}: Initializing..."})
+
+        start_date, end_date = trading_range
+
+        initial_cvar_params = copy.deepcopy(_cvar_params)
+        initial_cvar_params.T_tar = None
+
+        r = rebalance.rebalance_portfolio(
+            dataset_directory=dataset_path,
+            returns_compute_settings=_returns_compute_settings,
+            scenario_generation_settings=_scenario_settings,
+            trading_start=start_date,
+            trading_end=end_date,
+            look_forward_window=look_forward_window,
+            look_back_window=look_back_window,
+            cvar_params=initial_cvar_params,
+            solver_settings=_solver_settings,
+            re_optimize_criteria=re_optimize_criteria,
+            print_opt_result=False,
+        )
+        r.cvar_params = _cvar_params
+
+        bh_index = [d.isoformat() for d in r.buy_and_hold_cumulative_portfolio_value.index]
+        bh_values = r.buy_and_hold_cumulative_portfolio_value.values.tolist()
+
+        cumulative_values = []
+        cumulative_dates = []
+        rebal_dates = []
+
+        total_periods = 0
+        idx_tmp = 0
+        while idx_tmp < len(r.dates_range) - look_forward_window:
+            total_periods += 1
+            idx_tmp += look_forward_window
+
+        mp_queue.put({"status": "ready", "solver": solver_name,
+                       "message": f"{solver_name}: Ready",
+                       "bh_index": bh_index, "bh_values": bh_values,
+                       "total_periods": total_periods})
+
+        metric_column = r.re_optimize_type
+        results_rows = []
+        current_portfolio = r.initial_portfolio
+        prev_portfolio = None
+        portfolio_value = 1.0
+        backtest_idx = 0
+        backtest_date = r.trading_start
+        backtest_final_date = _pd.Timestamp(r.dates_range[-look_forward_window])
+        period_counter = 0
+        total_solve_time = 0.0
+        total_kde_time = 0.0
+        start_time_overall = time.time()
+
+        while _pd.Timestamp(backtest_date) < backtest_final_date:
+            period_counter += 1
+            reopt_triggered = False
+            reopt_metric = None
+            solve_time = 0.0
+
+            if period_counter == 1:
+                if current_portfolio is None:
+                    raise ValueError(f"{solver_name}: Initial portfolio not found")
+                mp_queue.put({"status": "reusing_baseline", "solver": solver_name,
+                               "message": f"{solver_name}: Using initial portfolio"})
+
+            bt_start = backtest_date.strftime("%Y-%m-%d")
+            bt_end = r.dates_range[backtest_idx + look_forward_window].strftime("%Y-%m-%d")
+            bt_regime = {"name": "backtest", "range": (bt_start, bt_end)}
+            test_returns = utils.calculate_returns(dataset_path, bt_regime, _returns_compute_settings)
+
+            bt = backtest.portfolio_backtester(current_portfolio, test_returns, benchmark_portfolios=None)
+            bt_result = bt.backtest_single_portfolio(current_portfolio)
+
+            cum_ret_values = (bt_result["cumulative returns"].values[0]
+                              if hasattr(bt_result["cumulative returns"], "values")
+                              else bt_result["cumulative returns"])
+            cur_cum = (cum_ret_values * portfolio_value).tolist()
+            cumulative_values.extend(cur_cum)
+            cumulative_dates.extend([d.isoformat() if hasattr(d, 'isoformat') else str(d) for d in bt._dates])
+
+            pct_change_raw = r._calculate_pct_change(bt_result)
+            pct_change = float(pct_change_raw) if hasattr(pct_change_raw, "item") else float(pct_change_raw)
+            tx_cost = 0.0 if prev_portfolio is None else r._calculate_transaction_cost(
+                current_portfolio, prev_portfolio, transaction_cost_factor)
+            portfolio_value = portfolio_value * (1 + pct_change - tx_cost)
+
+            prev_portfolio = current_portfolio
+
+            if r.re_optimize_type == "pct_change":
+                try:
+                    results_df_tmp = _pd.DataFrame(results_rows)
+                    if not results_df_tmp.empty:
+                        results_df_tmp = results_df_tmp.set_index("date")
+                        results_df_tmp[metric_column] = results_df_tmp[metric_column].fillna(0.0).astype(float)
+                        results_df_tmp["re_optimized"] = results_df_tmp["re_optimized"].fillna(False).astype(bool)
+                    reopt_metric, reopt_triggered = r._check_pct_change(float(pct_change), bt_result, results_df_tmp if not results_df_tmp.empty else _pd.DataFrame(columns=[metric_column, "re_optimized"]))
+                except Exception:
+                    reopt_triggered = pct_change < r.re_optimize_threshold
+                    reopt_metric = pct_change
+            elif r.re_optimize_type == "drift_from_optimal":
+                reopt_metric, reopt_triggered = r._check_drift_from_optimal(current_portfolio, backtest_idx)
+            elif r.re_optimize_type == "max_drawdown":
+                mdd = float(bt_result["max drawdown"].values[0] if hasattr(bt_result["max drawdown"], "values") else bt_result["max drawdown"])
+                reopt_triggered = r._check_max_drawdown(mdd)
+                reopt_metric = mdd
+            elif r.re_optimize_type == "no_re_optimize":
+                reopt_triggered = False
+                reopt_metric = None
+
+            if reopt_triggered:
+                opt_start = backtest_date - _pd.Timedelta(days=look_back_window)
+                opt_regime = {"name": "re-optimize", "range": (opt_start.strftime("%Y-%m-%d"), backtest_date.strftime("%Y-%m-%d"))}
+                opt_returns = utils.calculate_returns(dataset_path, opt_regime, _returns_compute_settings)
+
+                kde_t0 = time.time()
+                opt_returns = cvar_utils.generate_cvar_data(opt_returns, _scenario_settings)
+                kde_elapsed = time.time() - kde_t0
+                total_kde_time += kde_elapsed
+
+                mp_queue.put({"status": "kde_timing", "solver": solver_name,
+                               "kde_time": kde_elapsed, "total_kde_time": total_kde_time,
+                               "message": f"{solver_name}: KDE fit+sample {kde_elapsed:.3f}s"})
+
+                existing_ptf = current_portfolio if r.cvar_params.T_tar is not None else None
+                opt_problem = cvar_optimizer.CVaR(returns_dict=opt_returns, cvar_params=r.cvar_params, existing_portfolio=existing_ptf)
+                solver_result, current_portfolio = opt_problem.solve_optimization_problem(r.solver_settings, print_results=False)
+                solve_time = solver_result["solve time"]
+                total_solve_time += solve_time
+                rebal_dates.append(backtest_date.isoformat() if hasattr(backtest_date, 'isoformat') else str(backtest_date))
+
+            mdd_val = float(bt_result["max drawdown"].values[0] if hasattr(bt_result["max drawdown"], "values") else bt_result["max drawdown"])
+            results_rows.append({
+                "date": backtest_date,
+                metric_column: float(reopt_metric) if reopt_metric is not None else None,
+                "re_optimized": bool(reopt_triggered),
+                "portfolio_value": float(portfolio_value),
+                "max_drawdown": mdd_val,
+            })
+
+            current_total_time = time.time() - start_time_overall
+            mp_queue.put({
+                "status": "period_data",
+                "solver": solver_name,
+                "period": period_counter,
+                "total_periods": total_periods,
+                "cumulative_values": cumulative_values.copy(),
+                "cumulative_dates": cumulative_dates.copy(),
+                "rebal_dates": rebal_dates.copy(),
+                "portfolio_value": float(portfolio_value),
+                "solve_time": solve_time,
+                "total_solve_time": total_solve_time,
+                "total_elapsed_time": current_total_time,
+                "reoptimized": bool(reopt_triggered),
+                "message": f"{solver_name}: Period {period_counter}/{total_periods} | Re-opt: {'Yes' if reopt_triggered else 'No'}",
+            })
+
+            backtest_idx += look_forward_window
+            backtest_date = r.dates_range[backtest_idx]
+
+        # Final segment
+        remaining_days = len(r.dates_range) - backtest_idx
+        if remaining_days > 1:
+            try:
+                bt_start = backtest_date.strftime("%Y-%m-%d")
+                bt_end = r.dates_range[-1].strftime("%Y-%m-%d")
+                bt_regime = {"name": "backtest_final", "range": (bt_start, bt_end)}
+                test_returns = utils.calculate_returns(dataset_path, bt_regime, _returns_compute_settings)
+                bt = backtest.portfolio_backtester(current_portfolio, test_returns, benchmark_portfolios=None)
+                bt_result = bt.backtest_single_portfolio(current_portfolio)
+                cum_ret_values = (bt_result["cumulative returns"].values[0]
+                                  if hasattr(bt_result["cumulative returns"], "values")
+                                  else bt_result["cumulative returns"])
+                cur_cum = (cum_ret_values * portfolio_value).tolist()
+                cumulative_values.extend(cur_cum)
+                cumulative_dates.extend([d.isoformat() if hasattr(d, 'isoformat') else str(d) for d in bt._dates])
+            except Exception:
+                pass
+
+        final_total_time = time.time() - start_time_overall
+        results_df = _pd.DataFrame(results_rows)
+        if not results_df.empty and "date" in results_df.columns:
+            results_df = results_df.set_index("date")
+            results_df.index.name = "date"
+
+        mp_queue.put({
+            "status": "completed",
+            "solver": solver_name,
+            "cumulative_values": cumulative_values,
+            "cumulative_dates": cumulative_dates,
+            "rebal_dates": rebal_dates,
+            "bh_index": bh_index,
+            "bh_values": bh_values,
+            "results_df_dict": results_df.to_dict() if not results_df.empty else {},
+            "total_solve_time": total_solve_time,
+            "total_kde_time": total_kde_time,
+            "total_elapsed_time": final_total_time,
+            "rebal_count": len(rebal_dates),
+            "message": f"{solver_name}: Completed {period_counter} periods in {final_total_time:.2f}s",
+        })
+
+    except Exception as e:
+        mp_queue.put({
+            "status": "error",
+            "solver": solver_name,
+            "message": f"{solver_name}: Error - {str(e)}",
+            "error": traceback.format_exc(),
+        })
+
+
+def _build_cpu_figure(cumulative_values, cumulative_dates, bh_index, bh_values,
+                      rebal_dates, strategy_display_name):
+    """Build a matplotlib figure from raw data (runs in main process)."""
+    colors = get_color_scheme()
+    fig, ax, colors = _init_rebalancing_figure(f"- {strategy_display_name}", None, None)
+
+    bh_idx = pd.to_datetime(bh_index)
+    bh_series = pd.Series(bh_values, index=bh_idx)
+    ax.plot(bh_series.index, bh_series.values, linewidth=2.5,
+            color=colors["benchmark"][0], linestyle="-", alpha=0.8,
+            label="Buy & Hold", zorder=2)
+
+    if cumulative_values:
+        cum_idx = pd.to_datetime(cumulative_dates)
+        cum_series = pd.Series(cumulative_values, index=cum_idx)
+        ax.plot(cum_series.index, cum_series.values, linewidth=3,
+                color=colors["frontier"], alpha=0.9,
+                label="Dynamic Rebalancing", zorder=3)
+
+        if rebal_dates:
+            rebal_ts = pd.to_datetime(rebal_dates)
+            for dt in rebal_ts:
+                if dt in cum_series.index:
+                    val = float(cum_series[dt])
+                else:
+                    nearest = cum_series.index.get_indexer([dt], method="nearest")[0]
+                    if nearest >= 0:
+                        val = float(cum_series.iloc[nearest])
+                    else:
+                        continue
+                y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
+                lh = y_range * 0.05 if y_range > 0 else 0.01
+                ax.vlines(dt, val - lh, val + lh, color=colors["assets"],
+                          linewidth=2.5, alpha=0.9, linestyle="--", zorder=5)
+                ax.plot(dt, val, "o", color=colors["assets"], markersize=7,
+                        markeredgecolor="white", markeredgewidth=1.5, zorder=6)
+
+        _set_axis_limits(ax, cum_series, bh_series)
+
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color=colors["frontier"], linewidth=3, label="Dynamic Rebalancing"),
+        Line2D([0], [0], color=colors["benchmark"][0], linewidth=2.5, label="Buy & Hold"),
+    ]
+    if rebal_dates:
+        legend_elements.append(
+            Line2D([0], [0], color=colors["assets"], linewidth=2.5, linestyle="--",
+                   marker="o", markersize=7, markerfacecolor=colors["assets"],
+                   markeredgecolor="white", markeredgewidth=1.5, label="Rebalancing Dates"))
+    ax.legend(handles=legend_elements, loc=PlotStyling.LEGEND_LOCATION,
+              frameon=PlotStyling.LEGEND_FRAMEON, fancybox=PlotStyling.LEGEND_FANCYBOX,
+              shadow=PlotStyling.LEGEND_SHADOW, framealpha=PlotStyling.LEGEND_FRAMEALPHA,
+              fontsize=PlotStyling.LEGEND_FONTSIZE)
+    return fig
+
+
+def cpu_bridge_thread(mp_q, st_progress_q, st_result_q, strategy_display_name, start_event):
+    """Bridge thread: reads serializable data from mp.Queue, builds figures,
+    and pushes Streamlit-compatible updates to threading.Queue."""
+    bh_index = []
+    bh_values = []
+    solver_name = "CPU"
+
+    start_event.wait()
+
+    while True:
+        try:
+            msg = mp_q.get(timeout=1.0)
+        except Exception:
+            continue
+
+        status = msg.get("status")
+        solver_name = msg.get("solver", solver_name)
+
+        if status == "initializing":
+            st_progress_q.put({"solver": solver_name, "status": "initializing",
+                                "message": msg.get("message", "")})
+
+        elif status == "ready":
+            bh_index = msg.get("bh_index", [])
+            bh_values = msg.get("bh_values", [])
+            fig = _build_cpu_figure([], [], bh_index, bh_values, [],
+                                    strategy_display_name)
+            st_progress_q.put({"solver": solver_name, "status": "plot_ready",
+                                "figure": fig, "message": msg.get("message", "")})
+
+        elif status == "reusing_baseline":
+            st_progress_q.put({"solver": solver_name, "status": "reusing_baseline",
+                                "message": msg.get("message", "")})
+
+        elif status in ("kde_timing", "applying_turnover", "starting_optimization"):
+            st_progress_q.put({"solver": solver_name, "status": status,
+                                "message": msg.get("message", "")})
+
+        elif status == "period_data":
+            st_progress_q.put({
+                "solver": solver_name, "status": "period_progress",
+                "period": msg["period"], "total_periods": msg["total_periods"],
+                "reoptimized": msg.get("reoptimized", False),
+                "solve_time": msg.get("solve_time", 0),
+                "total_solve_time": msg.get("total_solve_time", 0),
+                "total_elapsed_time": msg.get("total_elapsed_time", 0),
+                "portfolio_value": msg.get("portfolio_value", 0),
+                "message": msg.get("message", ""),
+            })
+            fig = _build_cpu_figure(
+                msg["cumulative_values"], msg["cumulative_dates"],
+                bh_index, bh_values, msg["rebal_dates"],
+                strategy_display_name)
+            st_progress_q.put({
+                "solver": solver_name, "status": "period_plot_update",
+                "figure": fig,
+                "period": msg["period"], "total_periods": msg["total_periods"],
+            })
+
+        elif status == "completed":
+            fig = _build_cpu_figure(
+                msg["cumulative_values"], msg["cumulative_dates"],
+                msg.get("bh_index", bh_index), msg.get("bh_values", bh_values),
+                msg["rebal_dates"], strategy_display_name)
+
+            st_progress_q.put({
+                "solver": solver_name, "status": "completed",
+                "total_elapsed_time": msg.get("total_elapsed_time", 0),
+                "total_solve_time": msg.get("total_solve_time", 0),
+                "figure": fig,
+                "message": msg.get("message", ""),
+            })
+
+            results_df = pd.DataFrame.from_dict(msg.get("results_df_dict", {}))
+            bh_series = pd.Series(msg.get("bh_values", bh_values),
+                                  index=pd.to_datetime(msg.get("bh_index", bh_index)))
+            cum_series = pd.Series(msg["cumulative_values"],
+                                   index=pd.to_datetime(msg["cumulative_dates"]),
+                                   name="cumulative_portfolio_value")
+
+            st_result_q.put({
+                "success": True,
+                "solver_name": solver_name,
+                "results_df": results_df,
+                "cumulative_series": cum_series,
+                "baseline_series": bh_series,
+                "fig": fig,
+                "total_solve_time": msg.get("total_solve_time", 0),
+                "total_kde_time": msg.get("total_kde_time", 0),
+                "total_elapsed_time": msg.get("total_elapsed_time", 0),
+                "rebal_count": msg.get("rebal_count", 0),
+                "error": None,
+            })
+            break
+
+        elif status == "error":
+            st_progress_q.put({"solver": solver_name, "status": "error",
+                                "message": msg.get("message", "")})
+            st_result_q.put(_create_error_result(solver_name, msg.get("error", "")))
+            break
+
+
 def run_progressive_rebalancing(
     dataset_path: str,
     trading_range: tuple,
@@ -949,33 +1372,52 @@ def run_progressive_rebalancing(
 
     cpu_display_name = "CPU" if blog_mode else f"CPU ({cpu_solver_choice})"
 
-    cpu_thread = threading.Thread(
-        target=create_rebalancing_progressive,
+    # Serialize Pydantic models for subprocess boundary
+    cpu_cvar_dict = cpu_cvar_params.model_dump()
+    cpu_rcs_dict = returns_compute_settings.model_dump()
+    cpu_sgs_dict = cpu_scenario_settings.model_dump()
+
+    # mp.Queue for subprocess communication (serializable data only)
+    cpu_mp_q = mp.Queue()
+
+    cpu_process = mp.Process(
+        target=create_rebalancing_cpu_worker,
         args=(
             dataset_path,
             trading_range,
-            returns_compute_settings,
-            cpu_scenario_settings,
-            cpu_cvar_params,
-            cpu_settings,
+            cpu_rcs_dict,
+            cpu_sgs_dict,
+            cpu_cvar_dict,
+            cpu_solver_choice,
             look_back_window,
             look_forward_window,
             re_optimize_criteria,
             transaction_cost_factor,
             cpu_display_name,
-            strategy_display_name,
-            cpu_progress_q,
-            cpu_result_q,
-            start_event,
+            cpu_mp_q,
         ),
-        name="CPU-Thread",
+        name="CPU-Process",
         daemon=True,
     )
 
-    # Start threads with delay to prevent CUDA conflicts
+    # Bridge thread reads from mp.Queue and builds matplotlib figures
+    cpu_bridge = threading.Thread(
+        target=cpu_bridge_thread,
+        args=(
+            cpu_mp_q,
+            cpu_progress_q,
+            cpu_result_q,
+            strategy_display_name,
+            start_event,
+        ),
+        name="CPU-Bridge",
+        daemon=True,
+    )
+
+    # Start GPU thread, then CPU subprocess (fully isolated)
     gpu_thread.start()
-    time.sleep(0.1)
-    cpu_thread.start()
+    cpu_process.start()
+    cpu_bridge.start()
     time.sleep(PerformanceParams.INITIALIZATION_DELAY)
 
     # Show synchronization message
@@ -1144,7 +1586,8 @@ def run_progressive_rebalancing(
         time.sleep(PerformanceParams.MAIN_LOOP_DELAY)
 
     gpu_thread.join()
-    cpu_thread.join()
+    cpu_process.join(timeout=300)
+    cpu_bridge.join(timeout=10)
 
     # Gather results
     out = {}
@@ -1246,10 +1689,9 @@ def main():
             0.90, 0.99, float(DefaultValues.CONFIDENCE), 0.01,
             help="CVaR confidence level (α) — probability level for measuring tail risk. 0.95 means the worst 5%% of scenarios are considered.",
         )
-        num_scen = st.selectbox(
+        num_scen = st.slider(
             "Simulation Count",
-            [1000, 5000, 10000, 20000],
-            index=2,
+            5000, 20000, 10000, 1000,
             help="Number of scenarios (num_scen) — how many return scenarios to simulate for risk estimation.",
         )
 
