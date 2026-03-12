@@ -373,6 +373,7 @@ def create_rebalancing_progressive(
         results_df = pd.DataFrame(
             columns=[metric_column, "re_optimized", "portfolio_value", "max_drawdown"]
         )
+        portfolio_snapshots = {}
         current_portfolio = r.initial_portfolio
         prev_portfolio = None
         portfolio_value = 1.0
@@ -565,6 +566,13 @@ def create_rebalancing_progressive(
                 else bt_result["max drawdown"]
             )
             results_df.loc[backtest_date, "portfolio_value"] = float(portfolio_value)
+
+            # Snapshot portfolio composition
+            if current_portfolio is not None:
+                portfolio_snapshots[backtest_date] = {
+                    t: float(w) for t, w in zip(current_portfolio.tickers, current_portfolio.weights)
+                }
+                portfolio_snapshots[backtest_date]["cash"] = float(current_portfolio.cash)
 
             # Update plot with new data (with matplotlib lock for thread safety)
             try:
@@ -800,6 +808,7 @@ def create_rebalancing_progressive(
                 "success": True,
                 "solver_name": solver_name,
                 "results_df": results_df,
+                "portfolio_snapshots": portfolio_snapshots,
                 "cumulative_series": cum_series,
                 "baseline_series": bh_series,
                 "fig": fig,
@@ -919,6 +928,7 @@ def create_rebalancing_cpu_worker(
 
         metric_column = r.re_optimize_type
         results_rows = []
+        portfolio_snapshots = {}
         current_portfolio = r.initial_portfolio
         prev_portfolio = None
         portfolio_value = 1.0
@@ -1016,6 +1026,12 @@ def create_rebalancing_cpu_worker(
                 "max_drawdown": mdd_val,
             })
 
+            if current_portfolio is not None:
+                date_key = backtest_date.isoformat() if hasattr(backtest_date, 'isoformat') else str(backtest_date)
+                snap = {t: float(w) for t, w in zip(current_portfolio.tickers, current_portfolio.weights)}
+                snap["cash"] = float(current_portfolio.cash)
+                portfolio_snapshots[date_key] = snap
+
             current_total_time = time.time() - start_time_overall
             mp_queue.put({
                 "status": "period_data",
@@ -1070,6 +1086,7 @@ def create_rebalancing_cpu_worker(
             "bh_index": bh_index,
             "bh_values": bh_values,
             "results_df_dict": results_df.to_dict() if not results_df.empty else {},
+            "portfolio_snapshots": portfolio_snapshots,
             "total_solve_time": total_solve_time,
             "total_kde_time": total_kde_time,
             "total_elapsed_time": final_total_time,
@@ -1226,6 +1243,7 @@ def cpu_bridge_thread(mp_q, st_progress_q, st_result_q, strategy_display_name, s
                 "success": True,
                 "solver_name": solver_name,
                 "results_df": results_df,
+                "portfolio_snapshots": msg.get("portfolio_snapshots", {}),
                 "cumulative_series": cum_series,
                 "baseline_series": bh_series,
                 "fig": fig,
@@ -2206,26 +2224,34 @@ def main():
             else:
                 st.error("CPU failed")
 
+        def _render_period_table(label, result_dict):
+            """Render period results table with expandable portfolio composition."""
+            if not (result_dict.get("success") and isinstance(result_dict.get("results_df"), pd.DataFrame)):
+                return
+            st.markdown(f"**{label}**")
+            df = result_dict["results_df"].reset_index().rename(columns={"index": "date"})
+            st.dataframe(df, hide_index=True)
+
+            snapshots = result_dict.get("portfolio_snapshots", {})
+            if snapshots:
+                st.markdown(f"**{label} — Portfolio Composition**")
+                snap_df = pd.DataFrame.from_dict(snapshots, orient="index")
+                snap_df.index.name = "date"
+                asset_cols = sorted([c for c in snap_df.columns if c != "cash"])
+                col_order = asset_cols + (["cash"] if "cash" in snap_df.columns else [])
+                snap_df = snap_df[col_order]
+                # Mask ticker names to avoid financial suggestions
+                masked = {col: f"Asset {i+1}" for i, col in enumerate(asset_cols)}
+                if "cash" in snap_df.columns:
+                    masked["cash"] = "Cash"
+                snap_df = snap_df.rename(columns=masked)
+                st.dataframe(snap_df.style.format("{:.4f}"), height=300)
+
         # Detailed tables
         with st.expander("📋 Detailed Period Results", expanded=False):
-            if g.get("success") and isinstance(g.get("results_df"), pd.DataFrame):
-                st.markdown("**GPU Period Results**")
-                st.dataframe(
-                    g["results_df"].reset_index().rename(columns={"index": "date"}),
-                    hide_index=True,
-                )
-            if c.get("success") and isinstance(c.get("results_df"), pd.DataFrame):
-                # In blog mode, hide CPU solver name
-                cpu_results_header = (
-                    "**CPU Period Results**"
-                    if blog_mode
-                    else f"**CPU ({cpu_solver_choice}) Period Results**"
-                )
-                st.markdown(cpu_results_header)
-                st.dataframe(
-                    c["results_df"].reset_index().rename(columns={"index": "date"}),
-                    hide_index=True,
-                )
+            _render_period_table("GPU Period Results", g)
+            cpu_label = "CPU Period Results" if blog_mode else f"CPU ({cpu_solver_choice}) Period Results"
+            _render_period_table(cpu_label, c)
 
     # Disclaimer at the bottom
     st.markdown("---")
