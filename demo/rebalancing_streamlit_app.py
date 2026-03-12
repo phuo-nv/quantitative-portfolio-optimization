@@ -1377,10 +1377,11 @@ def run_progressive_rebalancing(
     cpu_rcs_dict = returns_compute_settings.model_dump()
     cpu_sgs_dict = cpu_scenario_settings.model_dump()
 
-    # mp.Queue for subprocess communication (serializable data only)
-    cpu_mp_q = mp.Queue()
+    # Use 'spawn' to avoid inheriting CUDA context (fork causes segfault)
+    ctx = mp.get_context("spawn")
+    cpu_mp_q = ctx.Queue()
 
-    cpu_process = mp.Process(
+    cpu_process = ctx.Process(
         target=create_rebalancing_cpu_worker,
         args=(
             dataset_path,
