@@ -94,6 +94,13 @@ st.set_page_config(
     page_title="Backtesting Rebalancing Strategies",
     layout="wide",
     initial_sidebar_state="expanded",
+    menu_items={
+        "About": (
+            "**cuFOLIO — Backtesting Rebalancing Strategies**\n\n"
+            "Toggle name masking by adding `?mask=false` to the URL "
+            "to show real dataset and ticker names, or `?mask=true` to hide them."
+        ),
+    },
 )
 
 
@@ -136,6 +143,120 @@ st.markdown(
 """,
     unsafe_allow_html=True,
 )
+
+
+def _build_portfolio_treemap(weights_dict, title_suffix="", cutoff=1e-3, notional=100_000_000, mask_names=True):
+    """Build a treemap figure showing portfolio composition.
+
+    Uses NVIDIA brand palette on a black background.
+    Rectangles are sized by absolute weight.
+    """
+    import squarify
+
+    _BG = "#000000"
+    # NVIDIA brand secondary palette
+    _GREEN_DARK2 = "#265600"
+    _GREEN_DARK1 = "#3f8500"
+    _NV_GREEN = "#76b900"
+    _GREEN_LIGHT1 = "#bff230"
+    _GREEN_LIGHT2 = "#cfff40"
+    _RED_DARK2 = "#650b0b"
+    _RED_DARK1 = "#961515"
+    _NV_RED = "#e52020"
+    _RED_LIGHT1 = "#ff8181"
+    _NV_YELLOW = "#f9c500"
+    _YELLOW_LIGHT = "#fcde7b"
+
+    def _hex_to_rgb(h):
+        return tuple(int(h[i:i+2], 16) / 255 for i in (1, 3, 5))
+
+    def _lerp_color(hex_a, hex_b, frac):
+        a, b = _hex_to_rgb(hex_a), _hex_to_rgb(hex_b)
+        return tuple(a[i] + (b[i] - a[i]) * frac for i in range(3)) + (0.92,)
+
+    with _matplotlib_lock:
+        plt.style.use(MatplotlibConfig.STYLE)
+
+        positions = {k: v for k, v in weights_dict.items() if k != "cash"}
+        cash = weights_dict.get("cash", 0.0)
+
+        tickers_sorted = sorted(positions.keys())
+        if mask_names:
+            mask = {t: f"Asset {i+1}" for i, t in enumerate(tickers_sorted)}
+        else:
+            mask = {t: t for t in tickers_sorted}
+
+        labels = []
+        sizes = []
+        rect_colors = []
+
+        long_items = sorted(
+            [(t, v) for t, v in positions.items() if v > cutoff],
+            key=lambda x: -x[1],
+        )
+        short_items = sorted(
+            [(t, v) for t, v in positions.items() if v < -cutoff],
+            key=lambda x: x[1],
+        )
+
+        # Green gradient: Dark2 → Dark1 → Green → Light1 → Light2
+        _green_stops = [_GREEN_DARK2, _GREEN_DARK1, _NV_GREEN, _GREEN_LIGHT1, _GREEN_LIGHT2]
+        for i, (t, v) in enumerate(long_items):
+            _val = abs(v) * notional
+            labels.append(f"{mask[t]}\n${_val:,.0f}")
+            sizes.append(abs(v))
+            frac = i / max(1, len(long_items) - 1) if len(long_items) > 1 else 0
+            seg = frac * (len(_green_stops) - 1)
+            idx = min(int(seg), len(_green_stops) - 2)
+            local_frac = seg - idx
+            rect_colors.append(_lerp_color(_green_stops[idx], _green_stops[idx + 1], local_frac))
+
+        # Red gradient: Dark2 → Dark1 → Red → Light1
+        _red_stops = [_RED_DARK2, _RED_DARK1, _NV_RED, _RED_LIGHT1]
+        for i, (t, v) in enumerate(short_items):
+            _val = abs(v) * notional
+            labels.append(f"{mask[t]} (Short)\n-${_val:,.0f}")
+            sizes.append(abs(v))
+            frac = i / max(1, len(short_items) - 1) if len(short_items) > 1 else 0
+            seg = frac * (len(_red_stops) - 1)
+            idx = min(int(seg), len(_red_stops) - 2)
+            local_frac = seg - idx
+            rect_colors.append(_lerp_color(_red_stops[idx], _red_stops[idx + 1], local_frac))
+
+        if abs(cash) > cutoff:
+            _val = abs(cash) * notional
+            labels.append(f"Cash\n${_val:,.0f}")
+            sizes.append(abs(cash))
+            rect_colors.append(_lerp_color(_NV_YELLOW, _YELLOW_LIGHT, 0.3))
+
+        if not sizes:
+            fig, ax = plt.subplots(figsize=(8, 5), dpi=100, facecolor=_BG)
+            ax.set_facecolor(_BG)
+            ax.text(0.5, 0.5, "No positions", ha="center", va="center",
+                    fontsize=14, color="#888")
+            ax.axis("off")
+            return fig
+
+        fig, ax = plt.subplots(figsize=(8, 5), dpi=100, facecolor=_BG)
+        ax.set_facecolor(_BG)
+
+        squarify.plot(
+            sizes=sizes,
+            label=labels,
+            color=rect_colors,
+            alpha=0.92,
+            ax=ax,
+            text_kwargs={"fontsize": 9, "color": "white", "fontweight": "bold"},
+            bar_kwargs={"linewidth": 2, "edgecolor": _BG},
+        )
+        ax.set_title(
+            f"Portfolio Allocation {title_suffix}".strip(),
+            fontsize=11, fontweight="bold", pad=6, color="#fafafa",
+        )
+        ax.axis("off")
+        fig.tight_layout(pad=0.5)
+
+    return fig
 
 
 def get_available_datasets():
@@ -704,6 +825,12 @@ def create_rebalancing_progressive(
             # Send progress and plot updates
             current_total_time = time.time() - start_time_overall
 
+            # Build current portfolio weights for live heatmap
+            _pw = {}
+            if current_portfolio is not None:
+                _pw = {t: float(w) for t, w in zip(current_portfolio.tickers, current_portfolio.weights)}
+                _pw["cash"] = float(current_portfolio.cash)
+
             # Progress update (every period)
             progress_queue.put(
                 {
@@ -717,6 +844,7 @@ def create_rebalancing_progressive(
                     "total_elapsed_time": current_total_time,
                     "metric": reopt_metric,
                     "portfolio_value": float(portfolio_value),
+                    "portfolio_weights": _pw,
                     "message": f"{solver_name}: Period {period_counter}/{total_periods} | Re-opt: {'Yes' if reopt_triggered else 'No'}",
                 }
             )
@@ -1032,6 +1160,12 @@ def create_rebalancing_cpu_worker(
                 snap["cash"] = float(current_portfolio.cash)
                 portfolio_snapshots[date_key] = snap
 
+            # Build portfolio weights for live heatmap
+            _pw = {}
+            if current_portfolio is not None:
+                _pw = {t: float(w) for t, w in zip(current_portfolio.tickers, current_portfolio.weights)}
+                _pw["cash"] = float(current_portfolio.cash)
+
             current_total_time = time.time() - start_time_overall
             mp_queue.put({
                 "status": "period_data",
@@ -1042,6 +1176,7 @@ def create_rebalancing_cpu_worker(
                 "cumulative_dates": cumulative_dates.copy(),
                 "rebal_dates": rebal_dates.copy(),
                 "portfolio_value": float(portfolio_value),
+                "portfolio_weights": _pw,
                 "solve_time": solve_time,
                 "total_solve_time": total_solve_time,
                 "total_elapsed_time": current_total_time,
@@ -1206,6 +1341,7 @@ def cpu_bridge_thread(mp_q, st_progress_q, st_result_q, strategy_display_name, s
                 "total_solve_time": msg.get("total_solve_time", 0),
                 "total_elapsed_time": msg.get("total_elapsed_time", 0),
                 "portfolio_value": msg.get("portfolio_value", 0),
+                "portfolio_weights": msg.get("portfolio_weights", {}),
                 "message": msg.get("message", ""),
             })
             fig = _build_cpu_figure(
@@ -1276,10 +1412,13 @@ def run_progressive_rebalancing(
     strategy_display_name: str,
     gpu_plot_container,
     cpu_plot_container,
+    gpu_heatmap_container,
+    cpu_heatmap_container,
     gpu_progress_placeholder,
     cpu_progress_placeholder,
     cpu_solver_choice: str,
     blog_mode: bool = True,
+    notional: int = 100_000_000,
 ):
     """Run GPU and CPU rebalancing in parallel with progressive updates."""
 
@@ -1395,7 +1534,7 @@ def run_progressive_rebalancing(
         daemon=True,
     )
 
-    cpu_display_name = "CPU" if blog_mode else f"CPU ({cpu_solver_choice})"
+    cpu_display_name = "CPU"
 
     # Serialize Pydantic models for subprocess boundary
     cpu_cvar_dict = cpu_cvar_params.model_dump()
@@ -1448,7 +1587,7 @@ def run_progressive_rebalancing(
     with gpu_progress_placeholder.container():
         st.info(UIText.GPU_SYNCHRONIZED)
     with cpu_progress_placeholder.container():
-        st.info(UIText.CPU_SYNCHRONIZED.format(cpu_display_name))
+        st.info("🖥️ CPU synchronized and ready to race!")
 
     start_event.set()  # Signal both threads to start optimization simultaneously
 
@@ -1480,6 +1619,15 @@ def run_progressive_rebalancing(
                         st.caption(
                             f"**Period {period}/{total}** | Portfolio: ${upd.get('portfolio_value', 0.0):.3f}"
                         )
+                    # Live heatmap update
+                    _gpw = upd.get("portfolio_weights", {})
+                    if _gpw:
+                        try:
+                            _hfig = _build_portfolio_treemap(_gpw, "— GPU", notional=notional, mask_names=blog_mode)
+                            gpu_heatmap_container.pyplot(_hfig, width="stretch")
+                            plt.close(_hfig)
+                        except Exception:
+                            pass
                 elif status == "period_plot_update" and not gpu_processed_plot:
                     # Update GPU plot (heavier update, only one per loop iteration)
                     fig = upd.get("figure")
@@ -1549,6 +1697,15 @@ def run_progressive_rebalancing(
                         st.caption(
                             f"**Period {period}/{total}** | Portfolio: ${upd.get('portfolio_value', 0.0):.3f}"
                         )
+                    # Live heatmap update
+                    _cpw = upd.get("portfolio_weights", {})
+                    if _cpw:
+                        try:
+                            _hfig = _build_portfolio_treemap(_cpw, "— CPU", notional=notional, mask_names=blog_mode)
+                            cpu_heatmap_container.pyplot(_hfig, width="stretch")
+                            plt.close(_hfig)
+                        except Exception:
+                            pass
                 elif status == "period_plot_update" and not cpu_processed_plot:
                     # Update CPU plot (heavier update, only one per loop iteration)
                     fig = upd.get("figure")
@@ -1639,6 +1796,9 @@ def run_progressive_rebalancing(
 def main():
     """Main Streamlit app"""
 
+    # Mask toggle via query param: ?mask=false to show real names
+    blog_mode = str(st.query_params.get("mask", "true")).lower() not in ("false", "0", "no")
+
     # Header
     st.markdown(
         f'<div class="main-header">cuFOLIO - Unlocking Real-Time Backtesting</div>',
@@ -1668,7 +1828,7 @@ def main():
             "Dataset",
             datasets,
             index=default_index,
-            format_func=lambda x: _dataset_labels[x],
+            format_func=lambda x: _dataset_labels[x] if blog_mode else x,
             key="dataset_selector",
         )
 
@@ -1887,7 +2047,20 @@ def main():
             cvar_hard_limit = None
             enable_cvar_limit = False
 
-        # CPU solver selection (always visible, masked names)
+        # Portfolio notional for heatmap display
+        st.markdown("---")
+        st.subheader("📊 Heatmap Display")
+        notional = st.number_input(
+            "Portfolio Notional ($)",
+            value=100_000_000,
+            min_value=1_000_000,
+            max_value=10_000_000_000,
+            step=10_000_000,
+            format="%d",
+            help="Hypothetical portfolio size used to display dollar amounts in the live heatmap.",
+        )
+
+        # CPU solver selection
         st.markdown("---")
         _cpu_solvers = {"HIGHS": "CPU Solver 1", "CLARABEL": "CPU Solver 2"}
         cpu_solver_choice = st.selectbox(
@@ -1897,8 +2070,6 @@ def main():
             format_func=lambda x: _cpu_solvers[x],
             help="Choose which CPU optimization engine to compare against GPU.",
         )
-
-        blog_mode = True
 
         # Run button
         st.markdown("---")
@@ -1997,8 +2168,9 @@ def main():
                 normalised = df_filtered.div(df_filtered.iloc[0])
                 for col in normalised.columns:
                     ax_preview.plot(normalised.index, normalised[col], linewidth=0.8, alpha=0.7)
+                _ds_label = _dataset_labels.get(dataset_name, "Dataset") if blog_mode else dataset_name
                 ax_preview.set_title(
-                    f"{_dataset_labels.get(dataset_name, 'Dataset')} — Normalised Closing Prices",
+                    f"{_ds_label} — Normalised Closing Prices",
                     fontsize=14, fontweight="bold",
                 )
                 ax_preview.set_ylabel("Price (normalised to 1)")
@@ -2122,15 +2294,13 @@ def main():
         with col_gpu:
             st.markdown("### 🚀 GPU (cuOpt) Results")
             gpu_plot_container = st.empty()
+            gpu_heatmap_container = st.empty()
             gpu_progress_placeholder = st.empty()
         with col_cpu:
-            cpu_header = (
-                "### 🖥️ CPU Results"
-                if blog_mode
-                else f"### 🖥️ CPU ({cpu_solver_choice}) Results"
-            )
+            cpu_header = "### 🖥️ CPU Results"
             st.markdown(cpu_header)
             cpu_plot_container = st.empty()
+            cpu_heatmap_container = st.empty()
             cpu_progress_placeholder = st.empty()
 
         # Device info below the graphs
@@ -2185,10 +2355,13 @@ def main():
             strategy_display_name=strategy_display[strategy_key],
             gpu_plot_container=gpu_plot_container,
             cpu_plot_container=cpu_plot_container,
+            gpu_heatmap_container=gpu_heatmap_container,
+            cpu_heatmap_container=cpu_heatmap_container,
             gpu_progress_placeholder=gpu_progress_placeholder,
             cpu_progress_placeholder=cpu_progress_placeholder,
             cpu_solver_choice=cpu_solver_choice,
             blog_mode=blog_mode,
+            notional=int(notional),
         )
 
         # Summaries
@@ -2224,12 +2397,15 @@ def main():
             else:
                 st.error("CPU failed")
 
-        def _format_portfolio_snapshot(weights_dict, cutoff=1e-3):
-            """Format a single snapshot in print_clean style with masked tickers."""
+        def _format_portfolio_snapshot(weights_dict, cutoff=1e-3, mask_names=True):
+            """Format a single snapshot in print_clean style, optionally masking tickers."""
             cash = weights_dict.get("cash", 0.0)
             positions = {k: v for k, v in weights_dict.items() if k != "cash"}
             tickers_sorted = sorted(positions.keys())
-            mask = {t: f"Asset {i+1}" for i, t in enumerate(tickers_sorted)}
+            if mask_names:
+                mask = {t: f"Asset {i+1}" for i, t in enumerate(tickers_sorted)}
+            else:
+                mask = {t: t for t in tickers_sorted}
 
             long = {mask[t]: v for t, v in positions.items() if v > cutoff}
             short = {mask[t]: v for t, v in positions.items() if v < -cutoff}
@@ -2284,12 +2460,12 @@ def main():
                         key=f"ptf_date_{label}",
                     )
                     idx = date_labels.index(selected)
-                    st.markdown(_format_portfolio_snapshot(snapshots[date_keys[idx]]))
+                    st.markdown(_format_portfolio_snapshot(snapshots[date_keys[idx]], mask_names=blog_mode))
 
         # Detailed tables
         with st.expander("📋 Detailed Period Results", expanded=False):
             _render_period_table("GPU Period Results", g)
-            cpu_label = "CPU Period Results" if blog_mode else f"CPU ({cpu_solver_choice}) Period Results"
+            cpu_label = "CPU Period Results"
             _render_period_table(cpu_label, c)
 
     # Disclaimer at the bottom

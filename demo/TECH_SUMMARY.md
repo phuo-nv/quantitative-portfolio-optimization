@@ -22,6 +22,7 @@ Two demo apps:
 - **Streamlit** — interactive web application framework
 - **scikit-learn** — CPU-based KDE (fallback when GPU unavailable)
 - **matplotlib / seaborn** — real-time plotting
+- **squarify** — treemap visualization for live portfolio heatmap
 
 ---
 
@@ -122,7 +123,7 @@ Typical solve times (sp500, 10k scenarios, B200 GPU):
 ## Control Summary
 
 **Sidebar controls:**
-- Dataset selector (masked as Dataset 1, 2, …)
+- Dataset selector (masked as Dataset 1, 2, … by default)
 - Date range (start/end)
 - Portfolio allocation range slider (min/max weight)
 - Cash reserve range slider
@@ -131,16 +132,30 @@ Typical solve times (sp500, 10k scenarios, B200 GPU):
 - Tail-risk confidence slider
 - Simulation count slider (5k–20k)
 - Rebalancing trigger selector (loss threshold, drift, drawdown, buy & hold)
-- CPU solver selector (masked as CPU Solver 1, CPU Solver 2)
+- Heatmap display — portfolio notional ($) for dollar amounts in the live treemap
+- CPU solver selector (always masked as CPU Solver 1, CPU Solver 2)
 - Advanced mode toggle (return type, threshold, windows, transaction costs, constraints)
 
 **Main panel tabs:**
 - Overview — intro + animated GIF demo
 - Dataset — normalised price chart for selected date range
-- Live Demo — GPU vs CPU side-by-side progressive results
+- Live Demo — GPU vs CPU side-by-side progressive results with live portfolio heatmap
 - Architecture — pipeline diagram
 - Benchmarks — B200 performance chart
 - References — GTC workshop QR codes + academic citations
+
+**Live portfolio heatmap:**
+- Treemap visualization of portfolio composition, updated every rebalancing period
+- Rectangle sizes correspond to asset weights; dollar amounts based on configurable notional
+- NVIDIA brand color palette: green gradient for long positions, red for shorts, gold for cash
+- Displayed side-by-side for both GPU and CPU solvers below the backtest charts
+
+**Name masking:**
+- Dataset and ticker names are masked by default to avoid specific financial suggestions
+- Solver names (CPU Solver 1, CPU Solver 2) are always masked
+- To unmask dataset and ticker names, append `?mask=false` to the URL
+- To re-enable masking, use `?mask=true` or remove the parameter
+- The "About" entry in the upper-right hamburger menu documents this toggle
 
 ---
 

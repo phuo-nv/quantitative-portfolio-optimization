@@ -12,6 +12,7 @@ dependencies = [
     "seaborn==0.13.2",
     "yfinance>=0.2.0",
     "pydantic>=2.12.5",
+    "squarify>=0.4.4",
 ]
 
 [project.optional-dependencies]
