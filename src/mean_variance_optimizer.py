@@ -427,10 +427,16 @@ class MeanVariance(base_optimizer.BaseOptimizer):
         # Step 4: Build objective using QuadraticExpression (matrix form)
         #   minimize: risk_aversion * (w' Σ w) - (μ' w)
 
-        # 4a: Quadratic term via matrix: risk_aversion * Σ passed directly
+        # 4a: Quadratic term via matrix — pad covariance to full problem
+        #     dimension (NumVariables x NumVariables) so it is compatible
+        #     with cuopt's setObjective internals.
         t0 = time.time()
-        q_matrix = (self.params.risk_aversion * self.covariance).tolist()
-        quad_expr = QuadraticExpression(q_matrix, w_vars)
+        total_vars = problem.NumVariables
+        q_matrix = np.zeros((total_vars, total_vars))
+        q_matrix[:num_assets, :num_assets] = (
+            self.params.risk_aversion * self.covariance
+        )
+        quad_expr = QuadraticExpression(q_matrix, problem.getVariables())
         timing["build_quad_matrix"] = time.time() - t0
 
         # 4b: Linear term: -μ'w
