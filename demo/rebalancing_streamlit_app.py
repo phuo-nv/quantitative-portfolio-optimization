@@ -303,7 +303,7 @@ def _build_portfolio_treemap(
         text=custom_text,
         texttemplate="<b>%{label}</b><br>%{text}",
         hovertemplate=hover_texts,
-        textfont=dict(size=12, color=text_colors, family="Arial Black"),
+        textfont=dict(size=10, color=text_colors, family="Arial Black"),
         pathbar=dict(visible=False),
         tiling=dict(packing="squarify", pad=3),
     ))
