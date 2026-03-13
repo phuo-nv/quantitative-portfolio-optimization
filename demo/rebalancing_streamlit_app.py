@@ -140,8 +140,13 @@ st.markdown(
         background-color: rgba(118, 185, 0, 0.1) !important;
         border-left-color: #76b900 !important;
     }
+    @keyframes fadeIn {
+        from { opacity: 0.3; }
+        to   { opacity: 1; }
+    }
     div[data-testid="stPlotlyChart"] {
         border-radius: 8px;
+        animation: fadeIn 400ms cubic-bezier(0.4, 0, 0.2, 1);
     }
 </style>
 """,
@@ -314,6 +319,7 @@ def _build_portfolio_treemap(
         margin=dict(t=40, l=5, r=5, b=5),
         height=380,
         autosize=True,
+        transition=dict(duration=400, easing="cubic-in-out"),
     )
 
     return fig
