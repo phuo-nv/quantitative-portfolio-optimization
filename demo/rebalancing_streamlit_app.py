@@ -156,8 +156,12 @@ st.markdown(
 
 
 def _build_portfolio_treemap(
-    weights_dict, title_suffix="", cutoff=1e-3, notional=100_000_000,
-    mask_names=True, prev_weights=None,
+    weights_dict,
+    title_suffix="",
+    cutoff=1e-3,
+    notional=100_000_000,
+    mask_names=True,
+    prev_weights=None,
 ):
     _BG = "#0e1117"
     _GREEN_DARK2 = "#265600"
@@ -180,7 +184,7 @@ def _build_portfolio_treemap(
 
     tickers_sorted = sorted(positions.keys())
     mask = (
-        {t: f"Asset {i+1}" for i, t in enumerate(tickers_sorted)}
+        {t: f"Asset {i + 1}" for i, t in enumerate(tickers_sorted)}
         if mask_names
         else {t: t for t in tickers_sorted}
     )
@@ -200,8 +204,8 @@ def _build_portfolio_treemap(
     )
 
     def _lerp_hex(hex_a, hex_b, frac):
-        a = tuple(int(hex_a[i:i + 2], 16) for i in (1, 3, 5))
-        b = tuple(int(hex_b[i:i + 2], 16) for i in (1, 3, 5))
+        a = tuple(int(hex_a[i : i + 2], 16) for i in (1, 3, 5))
+        b = tuple(int(hex_b[i : i + 2], 16) for i in (1, 3, 5))
         return "#{:02x}{:02x}{:02x}".format(
             int(a[0] + (b[0] - a[0]) * frac),
             int(a[1] + (b[1] - a[1]) * frac),
@@ -214,10 +218,10 @@ def _build_portfolio_treemap(
         if abs(delta) < 1e-4 or not prev_weights:
             return "", 0.0
         arrow = "▲" if delta > 0 else "▼"
-        return f" {arrow}{abs(delta)*100:.1f}%", delta
+        return f" {arrow}{abs(delta) * 100:.1f}%", delta
 
     def _text_color_for_bg(hex_color):
-        r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+        r, g, b = (int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
         luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
         return "#1a1a2e" if luminance > 0.52 else "#ffffff"
 
@@ -232,11 +236,13 @@ def _build_portfolio_treemap(
         frac = i / max(1, len(long_items) - 1) if len(long_items) > 1 else 0.5
         seg = frac * (len(_green_stops) - 1)
         idx = min(int(seg), len(_green_stops) - 2)
-        marker_colors.append(_lerp_hex(_green_stops[idx], _green_stops[idx + 1], seg - idx))
+        marker_colors.append(
+            _lerp_hex(_green_stops[idx], _green_stops[idx + 1], seg - idx)
+        )
         text_colors.append(_text_color_for_bg(marker_colors[-1]))
         custom_text.append(f"${dollar:,.0f}{tag}")
         hover_texts.append(
-            f"<b>{name}</b><br>Weight: {v:.4f} ({v*100:.2f}%)<br>"
+            f"<b>{name}</b><br>Weight: {v:.4f} ({v * 100:.2f}%)<br>"
             f"Value: ${dollar:,.0f}"
             + (f"<br>Δ {tag.strip()}" if tag else "")
             + "<extra></extra>"
@@ -257,7 +263,7 @@ def _build_portfolio_treemap(
         text_colors.append(_text_color_for_bg(marker_colors[-1]))
         custom_text.append(f"-${dollar:,.0f}{tag}")
         hover_texts.append(
-            f"<b>{name} (Short)</b><br>Weight: {v:.4f} ({v*100:.2f}%)<br>"
+            f"<b>{name} (Short)</b><br>Weight: {v:.4f} ({v * 100:.2f}%)<br>"
             f"Value: -${dollar:,.0f}"
             + (f"<br>Δ {tag.strip()}" if tag else "")
             + "<extra></extra>"
@@ -273,7 +279,7 @@ def _build_portfolio_treemap(
         text_colors.append(_text_color_for_bg(marker_colors[-1]))
         custom_text.append(f"${dollar:,.0f}{tag}")
         hover_texts.append(
-            f"<b>Cash</b><br>Weight: {cash:.4f} ({cash*100:.2f}%)<br>"
+            f"<b>Cash</b><br>Weight: {cash:.4f} ({cash * 100:.2f}%)<br>"
             f"Value: ${dollar:,.0f}"
             + (f"<br>Δ {tag.strip()}" if tag else "")
             + "<extra></extra>"
@@ -282,32 +288,40 @@ def _build_portfolio_treemap(
     if not labels:
         fig = go.Figure()
         fig.add_annotation(
-            text="No positions", xref="paper", yref="paper",
-            x=0.5, y=0.5, showarrow=False,
+            text="No positions",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
             font=dict(size=16, color="#888"),
         )
         fig.update_layout(
-            paper_bgcolor=_BG, plot_bgcolor=_BG,
-            height=550, margin=dict(t=30, l=5, r=5, b=5),
+            paper_bgcolor=_BG,
+            plot_bgcolor=_BG,
+            height=550,
+            margin=dict(t=30, l=5, r=5, b=5),
         )
         return fig
 
-    fig = go.Figure(go.Treemap(
-        labels=labels,
-        parents=parents,
-        values=values,
-        marker=dict(
-            colors=marker_colors,
-            line=dict(color=_BG, width=2),
-            pad=dict(t=30, l=6, r=6, b=6),
-        ),
-        text=custom_text,
-        texttemplate="<b>%{label}</b><br>%{text}",
-        hovertemplate=hover_texts,
-        textfont=dict(size=10, color=text_colors, family="Arial Black"),
-        pathbar=dict(visible=False),
-        tiling=dict(packing="squarify", pad=3),
-    ))
+    fig = go.Figure(
+        go.Treemap(
+            labels=labels,
+            parents=parents,
+            values=values,
+            marker=dict(
+                colors=marker_colors,
+                line=dict(color=_BG, width=2),
+                pad=dict(t=30, l=6, r=6, b=6),
+            ),
+            text=custom_text,
+            texttemplate="<b>%{label}</b><br>%{text}",
+            hovertemplate=hover_texts,
+            textfont=dict(size=10, color=text_colors, family="Arial Black"),
+            pathbar=dict(visible=False),
+            tiling=dict(packing="squarify", pad=3),
+        )
+    )
 
     fig.update_layout(
         paper_bgcolor=_BG,
@@ -321,37 +335,46 @@ def _build_portfolio_treemap(
     return fig
 
 
-def _build_rebalancing_plotly(cum_dates, cum_values, bh_dates, bh_values,
-                              rebal_dates=None, title_suffix=""):
+def _build_rebalancing_plotly(
+    cum_dates, cum_values, bh_dates, bh_values, rebal_dates=None, title_suffix=""
+):
     """Build an interactive Plotly chart for the rebalancing backtest."""
     import plotly.graph_objects as go
 
     fig = go.Figure()
 
     # NVIDIA brand secondary palette
-    _NV_ORANGE = "#ef9100"       # Orange
-    _NV_GREEN = "#76b900"        # NVIDIA Green
-    _NV_YELLOW = "#f9c500"       # Yellow
+    _NV_ORANGE = "#ef9100"  # Orange
+    _NV_GREEN = "#76b900"  # NVIDIA Green
+    _NV_YELLOW = "#f9c500"  # Yellow
     _NV_GREEN_LIGHT = "#bff230"  # Green Light 1
-    _NV_RED = "#e52020"          # Red
+    _NV_RED = "#e52020"  # Red
 
     # Baseline (buy & hold)
     if bh_dates and bh_values:
-        fig.add_trace(go.Scatter(
-            x=bh_dates, y=bh_values, mode="lines",
-            name="Buy & Hold",
-            line=dict(width=2, color=_NV_ORANGE),
-            hovertemplate="<b>Buy & Hold</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=bh_dates,
+                y=bh_values,
+                mode="lines",
+                name="Buy & Hold",
+                line=dict(width=2, color=_NV_ORANGE),
+                hovertemplate="<b>Buy & Hold</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>",
+            )
+        )
 
     # Dynamic rebalancing
     if cum_dates and cum_values:
-        fig.add_trace(go.Scatter(
-            x=cum_dates, y=cum_values, mode="lines",
-            name="Dynamic Rebalancing",
-            line=dict(width=2.5, color=_NV_GREEN),
-            hovertemplate="<b>Rebalancing</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=cum_dates,
+                y=cum_values,
+                mode="lines",
+                name="Dynamic Rebalancing",
+                line=dict(width=2.5, color=_NV_GREEN),
+                hovertemplate="<b>Rebalancing</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>",
+            )
+        )
 
     # Rebalancing date markers
     if rebal_dates and cum_dates and cum_values:
@@ -369,13 +392,21 @@ def _build_rebalancing_plotly(cum_dates, cum_values, bh_dates, bh_values,
                     marker_vals.append(float(cum_series.iloc[idx]))
                     marker_dates.append(cum_series.index[idx])
         if marker_dates:
-            fig.add_trace(go.Scatter(
-                x=marker_dates, y=marker_vals, mode="markers",
-                name="Rebalance",
-                marker=dict(size=8, color=_NV_YELLOW, symbol="diamond",
-                            line=dict(width=1.5, color="white")),
-                hovertemplate="<b>Rebalance Triggered</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>",
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=marker_dates,
+                    y=marker_vals,
+                    mode="markers",
+                    name="Rebalance",
+                    marker=dict(
+                        size=8,
+                        color=_NV_YELLOW,
+                        symbol="diamond",
+                        line=dict(width=1.5, color="white"),
+                    ),
+                    hovertemplate="<b>Rebalance Triggered</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>",
+                )
+            )
 
     fig.update_layout(
         paper_bgcolor="#000000",
@@ -385,13 +416,19 @@ def _build_rebalancing_plotly(cum_dates, cum_values, bh_dates, bh_values,
             font=dict(size=13, color="#fafafa"),
         ),
         xaxis=dict(gridcolor="#222", showgrid=True, color="#aaa", title=""),
-        yaxis=dict(gridcolor="#222", showgrid=True, color="#aaa",
-                   title="Cumulative Portfolio Value"),
+        yaxis=dict(
+            gridcolor="#222",
+            showgrid=True,
+            color="#aaa",
+            title="Cumulative Portfolio Value",
+        ),
         legend=dict(
             font=dict(color="#ccc", size=10),
             bgcolor="rgba(0,0,0,0.5)",
-            x=0.01, y=0.99,
-            xanchor="left", yanchor="top",
+            x=0.01,
+            y=0.99,
+            xanchor="left",
+            yanchor="top",
         ),
         height=380,
         margin=dict(l=60, r=20, t=40, b=30),
@@ -400,39 +437,64 @@ def _build_rebalancing_plotly(cum_dates, cum_values, bh_dates, bh_values,
     return fig
 
 
-def _render_rebalancing_frame(cum_dates, cum_values, bh_dates, bh_values,
-                              rebal_dates=None, title_suffix=""):
+def _render_rebalancing_frame(
+    cum_dates, cum_values, bh_dates, bh_values, rebal_dates=None, title_suffix=""
+):
     """Render a rebalancing chart frame as PNG bytes for smooth animation."""
     with _matplotlib_lock:
         fig, ax = plt.subplots(figsize=(8, 4), dpi=80, facecolor="#000000")
         ax.set_facecolor("#000000")
 
         if bh_dates and bh_values:
-            ax.plot(pd.to_datetime(bh_dates), bh_values,
-                    linewidth=1.8, color="#ef9100", alpha=0.85, label="Buy & Hold")
+            ax.plot(
+                pd.to_datetime(bh_dates),
+                bh_values,
+                linewidth=1.8,
+                color="#ef9100",
+                alpha=0.85,
+                label="Buy & Hold",
+            )
 
         if cum_dates and cum_values:
-            ax.plot(pd.to_datetime(cum_dates), cum_values,
-                    linewidth=2.2, color="#76b900", alpha=0.95, label="Dynamic Rebalancing")
+            ax.plot(
+                pd.to_datetime(cum_dates),
+                cum_values,
+                linewidth=2.2,
+                color="#76b900",
+                alpha=0.95,
+                label="Dynamic Rebalancing",
+            )
 
         if rebal_dates and cum_dates and cum_values:
             cum_s = pd.Series(cum_values, index=pd.to_datetime(cum_dates))
             for d in rebal_dates:
                 dt = pd.Timestamp(d)
                 if dt in cum_s.index:
-                    ax.plot(dt, float(cum_s[dt]), "D", color="#f9c500",
-                            markersize=5, markeredgecolor="white", markeredgewidth=0.8, zorder=5)
+                    ax.plot(
+                        dt,
+                        float(cum_s[dt]),
+                        "D",
+                        color="#f9c500",
+                        markersize=5,
+                        markeredgecolor="white",
+                        markeredgewidth=0.8,
+                        zorder=5,
+                    )
 
-        ax.set_title(f"Rebalancing Strategy {title_suffix}".strip(),
-                     fontsize=10, fontweight="bold", color="#fafafa", pad=4)
+        ax.set_title(
+            f"Rebalancing Strategy {title_suffix}".strip(),
+            fontsize=10,
+            fontweight="bold",
+            color="#fafafa",
+            pad=4,
+        )
         ax.set_ylabel("Cumulative Value", fontsize=8, color="#aaa")
         ax.tick_params(colors="#666", labelsize=7)
         ax.grid(True, alpha=0.15, color="#333")
         for spine in ax.spines.values():
             spine.set_visible(False)
         if cum_dates or bh_dates:
-            ax.legend(fontsize=7, loc="upper left", frameon=False,
-                      labelcolor="#ccc")
+            ax.legend(fontsize=7, loc="upper left", frameon=False, labelcolor="#ccc")
         fig.tight_layout(pad=0.8)
 
         buf = io.BytesIO()
@@ -466,8 +528,15 @@ def get_dataset_num_assets(dataset_name):
 
 def _fig_to_png_bytes(fig):
     import io
+
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi="figure", bbox_inches="tight", facecolor=fig.get_facecolor())
+    fig.savefig(
+        buf,
+        format="png",
+        dpi="figure",
+        bbox_inches="tight",
+        facecolor=fig.get_facecolor(),
+    )
     buf.seek(0)
     return buf.getvalue()
 
@@ -509,7 +578,9 @@ def _init_rebalancing_figure(title_suffix: str, xlim=None, ylim=None):
     with _matplotlib_lock:
         colors = get_color_scheme()
         plt.style.use(MatplotlibConfig.STYLE)
-        sns.set_context(MatplotlibConfig.CONTEXT, font_scale=MatplotlibConfig.FONT_SCALE)
+        sns.set_context(
+            MatplotlibConfig.CONTEXT, font_scale=MatplotlibConfig.FONT_SCALE
+        )
 
         fig, ax = plt.subplots(
             figsize=PlotStyling.REBALANCING_FIGURE_SIZE,
@@ -524,7 +595,9 @@ def _init_rebalancing_figure(title_suffix: str, xlim=None, ylim=None):
         ax.spines["left"].set_color(PlotStyling.SPINE_COLOR)
         ax.spines["bottom"].set_color(PlotStyling.SPINE_COLOR)
         ax.set_xlabel(
-            "Date", fontsize=PlotStyling.XLABEL_FONTSIZE, fontweight=PlotStyling.FONT_WEIGHT
+            "Date",
+            fontsize=PlotStyling.XLABEL_FONTSIZE,
+            fontweight=PlotStyling.FONT_WEIGHT,
         )
         ax.set_ylabel(
             "Cumulative Portfolio Value",
@@ -571,6 +644,7 @@ def create_rebalancing_progressive(
         if is_gpu:
             try:
                 import cupy as cupy_cuda
+
                 cupy_cuda.cuda.Device(0).use()
             except Exception:
                 pass
@@ -825,8 +899,7 @@ def create_rebalancing_progressive(
 
                 kde_t0 = time.time()
                 opt_returns = cvar_utils.generate_cvar_data(
-                    opt_returns,
-                    scenario_generation_settings
+                    opt_returns, scenario_generation_settings
                 )
                 kde_elapsed = time.time() - kde_t0
                 total_kde_time += kde_elapsed
@@ -861,8 +934,10 @@ def create_rebalancing_progressive(
                     existing_portfolio=existing_ptf_for_turnover,
                 )
                 t0 = time.time()
-                solver_result, current_portfolio = opt_problem.solve_optimization_problem(
-                    r.solver_settings, print_results=False
+                solver_result, current_portfolio = (
+                    opt_problem.solve_optimization_problem(
+                        r.solver_settings, print_results=False
+                    )
                 )
                 solve_time = solver_result["solve time"]
                 total_solve_time += solve_time
@@ -883,9 +958,14 @@ def create_rebalancing_progressive(
             # Snapshot portfolio composition
             if current_portfolio is not None:
                 portfolio_snapshots[backtest_date] = {
-                    t: float(w) for t, w in zip(current_portfolio.tickers, current_portfolio.weights)
+                    t: float(w)
+                    for t, w in zip(
+                        current_portfolio.tickers, current_portfolio.weights
+                    )
                 }
-                portfolio_snapshots[backtest_date]["cash"] = float(current_portfolio.cash)
+                portfolio_snapshots[backtest_date]["cash"] = float(
+                    current_portfolio.cash
+                )
 
             # Update plot with new data (with matplotlib lock for thread safety)
             try:
@@ -965,6 +1045,7 @@ def create_rebalancing_progressive(
 
                     # Create custom legend
                     from matplotlib.lines import Line2D
+
                     if ax.legend_:
                         ax.legend_.remove()
 
@@ -1020,7 +1101,12 @@ def create_rebalancing_progressive(
             # Build current portfolio weights for live heatmap
             _pw = {}
             if current_portfolio is not None:
-                _pw = {t: float(w) for t, w in zip(current_portfolio.tickers, current_portfolio.weights)}
+                _pw = {
+                    t: float(w)
+                    for t, w in zip(
+                        current_portfolio.tickers, current_portfolio.weights
+                    )
+                }
                 _pw["cash"] = float(current_portfolio.cash)
 
             # Progress update (every period)
@@ -1124,7 +1210,9 @@ def create_rebalancing_progressive(
                 "total_elapsed_time": final_total_time,
                 "total_solve_time": total_solve_time,
                 "cum_dates": [str(d) for d in cumulative_dates],
-                "cum_values": cumulative_values.tolist() if hasattr(cumulative_values, 'tolist') else list(cumulative_values),
+                "cum_values": cumulative_values.tolist()
+                if hasattr(cumulative_values, "tolist")
+                else list(cumulative_values),
                 "bh_dates": [str(d) for d in bh_series.index],
                 "bh_values": bh_series.values.tolist(),
                 "rebal_dates": [str(d) for d in rebal_dates],
@@ -1163,9 +1251,11 @@ def create_rebalancing_progressive(
 # Subprocess-isolated CPU worker (no matplotlib, no CUDA)
 # ---------------------------------------------------------------------------
 
+
 def _resolve_cpu_solver(solver_key: str):
     """Resolve a solver string key to a cvxpy solver object inside the subprocess."""
     import cvxpy as _cp
+
     _map = {
         "HIGHS": _cp.HIGHS,
         "CLARABEL": _cp.CLARABEL,
@@ -1208,13 +1298,22 @@ def create_rebalancing_cpu_worker(
         from cufolio.settings import ReturnsComputeSettings, ScenarioGenerationSettings
 
         # Reconstruct Pydantic objects from dicts
-        _returns_compute_settings = ReturnsComputeSettings(**returns_compute_settings_dict)
-        _scenario_settings = ScenarioGenerationSettings(**scenario_generation_settings_dict)
+        _returns_compute_settings = ReturnsComputeSettings(
+            **returns_compute_settings_dict
+        )
+        _scenario_settings = ScenarioGenerationSettings(
+            **scenario_generation_settings_dict
+        )
         _cvar_params = CvarParameters(**cvar_params_dict)
         _solver_settings = {"solver": _resolve_cpu_solver(solver_key), "verbose": False}
 
-        mp_queue.put({"status": "initializing", "solver": solver_name,
-                       "message": f"{solver_name}: Computing baseline strategy..."})
+        mp_queue.put(
+            {
+                "status": "initializing",
+                "solver": solver_name,
+                "message": f"{solver_name}: Computing baseline strategy...",
+            }
+        )
 
         start_date, end_date = trading_range
 
@@ -1236,7 +1335,9 @@ def create_rebalancing_cpu_worker(
         )
         r.cvar_params = _cvar_params
 
-        bh_index = [d.isoformat() for d in r.buy_and_hold_cumulative_portfolio_value.index]
+        bh_index = [
+            d.isoformat() for d in r.buy_and_hold_cumulative_portfolio_value.index
+        ]
         bh_values = r.buy_and_hold_cumulative_portfolio_value.values.tolist()
 
         cumulative_values = []
@@ -1249,10 +1350,16 @@ def create_rebalancing_cpu_worker(
             total_periods += 1
             idx_tmp += look_forward_window
 
-        mp_queue.put({"status": "ready", "solver": solver_name,
-                       "message": f"{solver_name}: Ready",
-                       "bh_index": bh_index, "bh_values": bh_values,
-                       "total_periods": total_periods})
+        mp_queue.put(
+            {
+                "status": "ready",
+                "solver": solver_name,
+                "message": f"{solver_name}: Ready",
+                "bh_index": bh_index,
+                "bh_values": bh_values,
+                "total_periods": total_periods,
+            }
+        )
 
         metric_column = r.re_optimize_type
         results_rows = []
@@ -1277,28 +1384,55 @@ def create_rebalancing_cpu_worker(
             if period_counter == 1:
                 if current_portfolio is None:
                     raise ValueError(f"{solver_name}: Initial portfolio not found")
-                mp_queue.put({"status": "reusing_baseline", "solver": solver_name,
-                               "message": f"{solver_name}: Using initial portfolio"})
+                mp_queue.put(
+                    {
+                        "status": "reusing_baseline",
+                        "solver": solver_name,
+                        "message": f"{solver_name}: Using initial portfolio",
+                    }
+                )
 
             bt_start = backtest_date.strftime("%Y-%m-%d")
-            bt_end = r.dates_range[backtest_idx + look_forward_window].strftime("%Y-%m-%d")
+            bt_end = r.dates_range[backtest_idx + look_forward_window].strftime(
+                "%Y-%m-%d"
+            )
             bt_regime = {"name": "backtest", "range": (bt_start, bt_end)}
-            test_returns = utils.calculate_returns(dataset_path, bt_regime, _returns_compute_settings)
+            test_returns = utils.calculate_returns(
+                dataset_path, bt_regime, _returns_compute_settings
+            )
 
-            bt = backtest.portfolio_backtester(current_portfolio, test_returns, benchmark_portfolios=None)
+            bt = backtest.portfolio_backtester(
+                current_portfolio, test_returns, benchmark_portfolios=None
+            )
             bt_result = bt.backtest_single_portfolio(current_portfolio)
 
-            cum_ret_values = (bt_result["cumulative returns"].values[0]
-                              if hasattr(bt_result["cumulative returns"], "values")
-                              else bt_result["cumulative returns"])
+            cum_ret_values = (
+                bt_result["cumulative returns"].values[0]
+                if hasattr(bt_result["cumulative returns"], "values")
+                else bt_result["cumulative returns"]
+            )
             cur_cum = (cum_ret_values * portfolio_value).tolist()
             cumulative_values.extend(cur_cum)
-            cumulative_dates.extend([d.isoformat() if hasattr(d, 'isoformat') else str(d) for d in bt._dates])
+            cumulative_dates.extend(
+                [
+                    d.isoformat() if hasattr(d, "isoformat") else str(d)
+                    for d in bt._dates
+                ]
+            )
 
             pct_change_raw = r._calculate_pct_change(bt_result)
-            pct_change = float(pct_change_raw) if hasattr(pct_change_raw, "item") else float(pct_change_raw)
-            tx_cost = 0.0 if prev_portfolio is None else r._calculate_transaction_cost(
-                current_portfolio, prev_portfolio, transaction_cost_factor)
+            pct_change = (
+                float(pct_change_raw)
+                if hasattr(pct_change_raw, "item")
+                else float(pct_change_raw)
+            )
+            tx_cost = (
+                0.0
+                if prev_portfolio is None
+                else r._calculate_transaction_cost(
+                    current_portfolio, prev_portfolio, transaction_cost_factor
+                )
+            )
             portfolio_value = portfolio_value * (1 + pct_change - tx_cost)
 
             prev_portfolio = current_portfolio
@@ -1308,16 +1442,32 @@ def create_rebalancing_cpu_worker(
                     results_df_tmp = _pd.DataFrame(results_rows)
                     if not results_df_tmp.empty:
                         results_df_tmp = results_df_tmp.set_index("date")
-                        results_df_tmp[metric_column] = results_df_tmp[metric_column].fillna(0.0).astype(float)
-                        results_df_tmp["re_optimized"] = results_df_tmp["re_optimized"].fillna(False).astype(bool)
-                    reopt_metric, reopt_triggered = r._check_pct_change(float(pct_change), bt_result, results_df_tmp if not results_df_tmp.empty else _pd.DataFrame(columns=[metric_column, "re_optimized"]))
+                        results_df_tmp[metric_column] = (
+                            results_df_tmp[metric_column].fillna(0.0).astype(float)
+                        )
+                        results_df_tmp["re_optimized"] = (
+                            results_df_tmp["re_optimized"].fillna(False).astype(bool)
+                        )
+                    reopt_metric, reopt_triggered = r._check_pct_change(
+                        float(pct_change),
+                        bt_result,
+                        results_df_tmp
+                        if not results_df_tmp.empty
+                        else _pd.DataFrame(columns=[metric_column, "re_optimized"]),
+                    )
                 except Exception:
                     reopt_triggered = pct_change < r.re_optimize_threshold
                     reopt_metric = pct_change
             elif r.re_optimize_type == "drift_from_optimal":
-                reopt_metric, reopt_triggered = r._check_drift_from_optimal(current_portfolio, backtest_idx)
+                reopt_metric, reopt_triggered = r._check_drift_from_optimal(
+                    current_portfolio, backtest_idx
+                )
             elif r.re_optimize_type == "max_drawdown":
-                mdd = float(bt_result["max drawdown"].values[0] if hasattr(bt_result["max drawdown"], "values") else bt_result["max drawdown"])
+                mdd = float(
+                    bt_result["max drawdown"].values[0]
+                    if hasattr(bt_result["max drawdown"], "values")
+                    else bt_result["max drawdown"]
+                )
                 reopt_triggered = r._check_max_drawdown(mdd)
                 reopt_metric = mdd
             elif r.re_optimize_type == "no_re_optimize":
@@ -1326,63 +1476,117 @@ def create_rebalancing_cpu_worker(
 
             if reopt_triggered:
                 opt_start = backtest_date - _pd.Timedelta(days=look_back_window)
-                opt_regime = {"name": "re-optimize", "range": (opt_start.strftime("%Y-%m-%d"), backtest_date.strftime("%Y-%m-%d"))}
-                opt_returns = utils.calculate_returns(dataset_path, opt_regime, _returns_compute_settings)
+                opt_regime = {
+                    "name": "re-optimize",
+                    "range": (
+                        opt_start.strftime("%Y-%m-%d"),
+                        backtest_date.strftime("%Y-%m-%d"),
+                    ),
+                }
+                opt_returns = utils.calculate_returns(
+                    dataset_path, opt_regime, _returns_compute_settings
+                )
 
                 kde_t0 = time.time()
-                opt_returns = cvar_utils.generate_cvar_data(opt_returns, _scenario_settings)
+                opt_returns = cvar_utils.generate_cvar_data(
+                    opt_returns, _scenario_settings
+                )
                 kde_elapsed = time.time() - kde_t0
                 total_kde_time += kde_elapsed
 
-                mp_queue.put({"status": "kde_timing", "solver": solver_name,
-                               "kde_time": kde_elapsed, "total_kde_time": total_kde_time,
-                               "message": f"{solver_name}: KDE fit+sample {kde_elapsed:.3f}s"})
+                mp_queue.put(
+                    {
+                        "status": "kde_timing",
+                        "solver": solver_name,
+                        "kde_time": kde_elapsed,
+                        "total_kde_time": total_kde_time,
+                        "message": f"{solver_name}: KDE fit+sample {kde_elapsed:.3f}s",
+                    }
+                )
 
-                existing_ptf = current_portfolio if r.cvar_params.T_tar is not None else None
-                opt_problem = cvar_optimizer.CVaR(returns_dict=opt_returns, cvar_params=r.cvar_params, existing_portfolio=existing_ptf)
-                solver_result, current_portfolio = opt_problem.solve_optimization_problem(r.solver_settings, print_results=False)
+                existing_ptf = (
+                    current_portfolio if r.cvar_params.T_tar is not None else None
+                )
+                opt_problem = cvar_optimizer.CVaR(
+                    returns_dict=opt_returns,
+                    cvar_params=r.cvar_params,
+                    existing_portfolio=existing_ptf,
+                )
+                solver_result, current_portfolio = (
+                    opt_problem.solve_optimization_problem(
+                        r.solver_settings, print_results=False
+                    )
+                )
                 solve_time = solver_result["solve time"]
                 total_solve_time += solve_time
-                rebal_dates.append(backtest_date.isoformat() if hasattr(backtest_date, 'isoformat') else str(backtest_date))
+                rebal_dates.append(
+                    backtest_date.isoformat()
+                    if hasattr(backtest_date, "isoformat")
+                    else str(backtest_date)
+                )
 
-            mdd_val = float(bt_result["max drawdown"].values[0] if hasattr(bt_result["max drawdown"], "values") else bt_result["max drawdown"])
-            results_rows.append({
-                "date": backtest_date,
-                metric_column: float(reopt_metric) if reopt_metric is not None else None,
-                "re_optimized": bool(reopt_triggered),
-                "portfolio_value": float(portfolio_value),
-                "max_drawdown": mdd_val,
-            })
+            mdd_val = float(
+                bt_result["max drawdown"].values[0]
+                if hasattr(bt_result["max drawdown"], "values")
+                else bt_result["max drawdown"]
+            )
+            results_rows.append(
+                {
+                    "date": backtest_date,
+                    metric_column: float(reopt_metric)
+                    if reopt_metric is not None
+                    else None,
+                    "re_optimized": bool(reopt_triggered),
+                    "portfolio_value": float(portfolio_value),
+                    "max_drawdown": mdd_val,
+                }
+            )
 
             if current_portfolio is not None:
-                date_key = backtest_date.isoformat() if hasattr(backtest_date, 'isoformat') else str(backtest_date)
-                snap = {t: float(w) for t, w in zip(current_portfolio.tickers, current_portfolio.weights)}
+                date_key = (
+                    backtest_date.isoformat()
+                    if hasattr(backtest_date, "isoformat")
+                    else str(backtest_date)
+                )
+                snap = {
+                    t: float(w)
+                    for t, w in zip(
+                        current_portfolio.tickers, current_portfolio.weights
+                    )
+                }
                 snap["cash"] = float(current_portfolio.cash)
                 portfolio_snapshots[date_key] = snap
 
             # Build portfolio weights for live heatmap
             _pw = {}
             if current_portfolio is not None:
-                _pw = {t: float(w) for t, w in zip(current_portfolio.tickers, current_portfolio.weights)}
+                _pw = {
+                    t: float(w)
+                    for t, w in zip(
+                        current_portfolio.tickers, current_portfolio.weights
+                    )
+                }
                 _pw["cash"] = float(current_portfolio.cash)
 
             current_total_time = time.time() - start_time_overall
-            mp_queue.put({
-                "status": "period_data",
-                "solver": solver_name,
-                "period": period_counter,
-                "total_periods": total_periods,
-                "cumulative_values": cumulative_values.copy(),
-                "cumulative_dates": cumulative_dates.copy(),
-                "rebal_dates": rebal_dates.copy(),
-                "portfolio_value": float(portfolio_value),
-                "portfolio_weights": _pw,
-                "solve_time": solve_time,
-                "total_solve_time": total_solve_time,
-                "total_elapsed_time": current_total_time,
-                "reoptimized": bool(reopt_triggered),
-                "message": f"{solver_name}: Period {period_counter}/{total_periods} | Re-opt: {'Yes' if reopt_triggered else 'No'}",
-            })
+            mp_queue.put(
+                {
+                    "status": "period_data",
+                    "solver": solver_name,
+                    "period": period_counter,
+                    "total_periods": total_periods,
+                    "cumulative_values": cumulative_values.copy(),
+                    "cumulative_dates": cumulative_dates.copy(),
+                    "rebal_dates": rebal_dates.copy(),
+                    "portfolio_value": float(portfolio_value),
+                    "portfolio_weights": _pw,
+                    "solve_time": solve_time,
+                    "total_solve_time": total_solve_time,
+                    "total_elapsed_time": current_total_time,
+                    "reoptimized": bool(reopt_triggered),
+                    "message": f"{solver_name}: Period {period_counter}/{total_periods} | Re-opt: {'Yes' if reopt_triggered else 'No'}",
+                }
+            )
 
             backtest_idx += look_forward_window
             backtest_date = r.dates_range[backtest_idx]
@@ -1394,15 +1598,26 @@ def create_rebalancing_cpu_worker(
                 bt_start = backtest_date.strftime("%Y-%m-%d")
                 bt_end = r.dates_range[-1].strftime("%Y-%m-%d")
                 bt_regime = {"name": "backtest_final", "range": (bt_start, bt_end)}
-                test_returns = utils.calculate_returns(dataset_path, bt_regime, _returns_compute_settings)
-                bt = backtest.portfolio_backtester(current_portfolio, test_returns, benchmark_portfolios=None)
+                test_returns = utils.calculate_returns(
+                    dataset_path, bt_regime, _returns_compute_settings
+                )
+                bt = backtest.portfolio_backtester(
+                    current_portfolio, test_returns, benchmark_portfolios=None
+                )
                 bt_result = bt.backtest_single_portfolio(current_portfolio)
-                cum_ret_values = (bt_result["cumulative returns"].values[0]
-                                  if hasattr(bt_result["cumulative returns"], "values")
-                                  else bt_result["cumulative returns"])
+                cum_ret_values = (
+                    bt_result["cumulative returns"].values[0]
+                    if hasattr(bt_result["cumulative returns"], "values")
+                    else bt_result["cumulative returns"]
+                )
                 cur_cum = (cum_ret_values * portfolio_value).tolist()
                 cumulative_values.extend(cur_cum)
-                cumulative_dates.extend([d.isoformat() if hasattr(d, 'isoformat') else str(d) for d in bt._dates])
+                cumulative_dates.extend(
+                    [
+                        d.isoformat() if hasattr(d, "isoformat") else str(d)
+                        for d in bt._dates
+                    ]
+                )
             except Exception:
                 pass
 
@@ -1412,50 +1627,73 @@ def create_rebalancing_cpu_worker(
             results_df = results_df.set_index("date")
             results_df.index.name = "date"
 
-        mp_queue.put({
-            "status": "completed",
-            "solver": solver_name,
-            "cumulative_values": cumulative_values,
-            "cumulative_dates": cumulative_dates,
-            "rebal_dates": rebal_dates,
-            "bh_index": bh_index,
-            "bh_values": bh_values,
-            "results_df_dict": results_df.to_dict() if not results_df.empty else {},
-            "portfolio_snapshots": portfolio_snapshots,
-            "total_solve_time": total_solve_time,
-            "total_kde_time": total_kde_time,
-            "total_elapsed_time": final_total_time,
-            "rebal_count": len(rebal_dates),
-            "message": f"{solver_name}: Completed {period_counter} periods in {final_total_time:.2f}s",
-        })
+        mp_queue.put(
+            {
+                "status": "completed",
+                "solver": solver_name,
+                "cumulative_values": cumulative_values,
+                "cumulative_dates": cumulative_dates,
+                "rebal_dates": rebal_dates,
+                "bh_index": bh_index,
+                "bh_values": bh_values,
+                "results_df_dict": results_df.to_dict() if not results_df.empty else {},
+                "portfolio_snapshots": portfolio_snapshots,
+                "total_solve_time": total_solve_time,
+                "total_kde_time": total_kde_time,
+                "total_elapsed_time": final_total_time,
+                "rebal_count": len(rebal_dates),
+                "message": f"{solver_name}: Completed {period_counter} periods in {final_total_time:.2f}s",
+            }
+        )
 
     except Exception as e:
-        mp_queue.put({
-            "status": "error",
-            "solver": solver_name,
-            "message": f"{solver_name}: Error - {str(e)}",
-            "error": traceback.format_exc(),
-        })
+        mp_queue.put(
+            {
+                "status": "error",
+                "solver": solver_name,
+                "message": f"{solver_name}: Error - {str(e)}",
+                "error": traceback.format_exc(),
+            }
+        )
 
 
-def _build_cpu_figure(cumulative_values, cumulative_dates, bh_index, bh_values,
-                      rebal_dates, strategy_display_name):
+def _build_cpu_figure(
+    cumulative_values,
+    cumulative_dates,
+    bh_index,
+    bh_values,
+    rebal_dates,
+    strategy_display_name,
+):
     """Build a matplotlib figure from raw data (runs in main process)."""
     colors = get_color_scheme()
     fig, ax, colors = _init_rebalancing_figure(f"- {strategy_display_name}", None, None)
 
     bh_idx = pd.to_datetime(bh_index)
     bh_series = pd.Series(bh_values, index=bh_idx)
-    ax.plot(bh_series.index, bh_series.values, linewidth=2.5,
-            color=colors["benchmark"][0], linestyle="-", alpha=0.8,
-            label="Buy & Hold", zorder=2)
+    ax.plot(
+        bh_series.index,
+        bh_series.values,
+        linewidth=2.5,
+        color=colors["benchmark"][0],
+        linestyle="-",
+        alpha=0.8,
+        label="Buy & Hold",
+        zorder=2,
+    )
 
     if cumulative_values:
         cum_idx = pd.to_datetime(cumulative_dates)
         cum_series = pd.Series(cumulative_values, index=cum_idx)
-        ax.plot(cum_series.index, cum_series.values, linewidth=3,
-                color=colors["frontier"], alpha=0.9,
-                label="Dynamic Rebalancing", zorder=3)
+        ax.plot(
+            cum_series.index,
+            cum_series.values,
+            linewidth=3,
+            color=colors["frontier"],
+            alpha=0.9,
+            label="Dynamic Rebalancing",
+            zorder=3,
+        )
 
         if rebal_dates:
             rebal_ts = pd.to_datetime(rebal_dates)
@@ -1470,31 +1708,70 @@ def _build_cpu_figure(cumulative_values, cumulative_dates, bh_index, bh_values,
                         continue
                 y_range = ax.get_ylim()[1] - ax.get_ylim()[0]
                 lh = y_range * 0.05 if y_range > 0 else 0.01
-                ax.vlines(dt, val - lh, val + lh, color=colors["assets"],
-                          linewidth=2.5, alpha=0.9, linestyle="--", zorder=5)
-                ax.plot(dt, val, "o", color=colors["assets"], markersize=7,
-                        markeredgecolor="white", markeredgewidth=1.5, zorder=6)
+                ax.vlines(
+                    dt,
+                    val - lh,
+                    val + lh,
+                    color=colors["assets"],
+                    linewidth=2.5,
+                    alpha=0.9,
+                    linestyle="--",
+                    zorder=5,
+                )
+                ax.plot(
+                    dt,
+                    val,
+                    "o",
+                    color=colors["assets"],
+                    markersize=7,
+                    markeredgecolor="white",
+                    markeredgewidth=1.5,
+                    zorder=6,
+                )
 
         _set_axis_limits(ax, cum_series, bh_series)
 
     from matplotlib.lines import Line2D
+
     legend_elements = [
-        Line2D([0], [0], color=colors["frontier"], linewidth=3, label="Dynamic Rebalancing"),
-        Line2D([0], [0], color=colors["benchmark"][0], linewidth=2.5, label="Buy & Hold"),
+        Line2D(
+            [0], [0], color=colors["frontier"], linewidth=3, label="Dynamic Rebalancing"
+        ),
+        Line2D(
+            [0], [0], color=colors["benchmark"][0], linewidth=2.5, label="Buy & Hold"
+        ),
     ]
     if rebal_dates:
         legend_elements.append(
-            Line2D([0], [0], color=colors["assets"], linewidth=2.5, linestyle="--",
-                   marker="o", markersize=7, markerfacecolor=colors["assets"],
-                   markeredgecolor="white", markeredgewidth=1.5, label="Rebalancing Dates"))
-    ax.legend(handles=legend_elements, loc=PlotStyling.LEGEND_LOCATION,
-              frameon=PlotStyling.LEGEND_FRAMEON, fancybox=PlotStyling.LEGEND_FANCYBOX,
-              shadow=PlotStyling.LEGEND_SHADOW, framealpha=PlotStyling.LEGEND_FRAMEALPHA,
-              fontsize=PlotStyling.LEGEND_FONTSIZE)
+            Line2D(
+                [0],
+                [0],
+                color=colors["assets"],
+                linewidth=2.5,
+                linestyle="--",
+                marker="o",
+                markersize=7,
+                markerfacecolor=colors["assets"],
+                markeredgecolor="white",
+                markeredgewidth=1.5,
+                label="Rebalancing Dates",
+            )
+        )
+    ax.legend(
+        handles=legend_elements,
+        loc=PlotStyling.LEGEND_LOCATION,
+        frameon=PlotStyling.LEGEND_FRAMEON,
+        fancybox=PlotStyling.LEGEND_FANCYBOX,
+        shadow=PlotStyling.LEGEND_SHADOW,
+        framealpha=PlotStyling.LEGEND_FRAMEALPHA,
+        fontsize=PlotStyling.LEGEND_FONTSIZE,
+    )
     return fig
 
 
-def cpu_bridge_thread(mp_q, st_progress_q, st_result_q, strategy_display_name, start_event):
+def cpu_bridge_thread(
+    mp_q, st_progress_q, st_result_q, strategy_display_name, start_event
+):
     """Bridge thread: reads serializable data from mp.Queue, builds figures,
     and pushes Streamlit-compatible updates to threading.Queue."""
     bh_index = []
@@ -1513,85 +1790,128 @@ def cpu_bridge_thread(mp_q, st_progress_q, st_result_q, strategy_display_name, s
         solver_name = msg.get("solver", solver_name)
 
         if status == "initializing":
-            st_progress_q.put({"solver": solver_name, "status": "initializing",
-                                "message": msg.get("message", "")})
+            st_progress_q.put(
+                {
+                    "solver": solver_name,
+                    "status": "initializing",
+                    "message": msg.get("message", ""),
+                }
+            )
 
         elif status == "ready":
             bh_index = msg.get("bh_index", [])
             bh_values = msg.get("bh_values", [])
-            st_progress_q.put({"solver": solver_name, "status": "plot_ready",
-                                "bh_dates": bh_index, "bh_values": bh_values,
-                                "message": msg.get("message", "")})
+            st_progress_q.put(
+                {
+                    "solver": solver_name,
+                    "status": "plot_ready",
+                    "bh_dates": bh_index,
+                    "bh_values": bh_values,
+                    "message": msg.get("message", ""),
+                }
+            )
 
         elif status == "reusing_baseline":
-            st_progress_q.put({"solver": solver_name, "status": "reusing_baseline",
-                                "message": msg.get("message", "")})
+            st_progress_q.put(
+                {
+                    "solver": solver_name,
+                    "status": "reusing_baseline",
+                    "message": msg.get("message", ""),
+                }
+            )
 
         elif status in ("kde_timing", "applying_turnover", "starting_optimization"):
-            st_progress_q.put({"solver": solver_name, "status": status,
-                                "message": msg.get("message", "")})
+            st_progress_q.put(
+                {
+                    "solver": solver_name,
+                    "status": status,
+                    "message": msg.get("message", ""),
+                }
+            )
 
         elif status == "period_data":
-            st_progress_q.put({
-                "solver": solver_name, "status": "period_progress",
-                "period": msg["period"], "total_periods": msg["total_periods"],
-                "reoptimized": msg.get("reoptimized", False),
-                "solve_time": msg.get("solve_time", 0),
-                "total_solve_time": msg.get("total_solve_time", 0),
-                "total_elapsed_time": msg.get("total_elapsed_time", 0),
-                "portfolio_value": msg.get("portfolio_value", 0),
-                "portfolio_weights": msg.get("portfolio_weights", {}),
-                "message": msg.get("message", ""),
-            })
-            st_progress_q.put({
-                "solver": solver_name, "status": "period_plot_update",
-                "cum_dates": msg["cumulative_dates"],
-                "cum_values": msg["cumulative_values"],
-                "bh_dates": bh_index,
-                "bh_values": bh_values,
-                "rebal_dates": msg["rebal_dates"],
-                "period": msg["period"], "total_periods": msg["total_periods"],
-            })
+            st_progress_q.put(
+                {
+                    "solver": solver_name,
+                    "status": "period_progress",
+                    "period": msg["period"],
+                    "total_periods": msg["total_periods"],
+                    "reoptimized": msg.get("reoptimized", False),
+                    "solve_time": msg.get("solve_time", 0),
+                    "total_solve_time": msg.get("total_solve_time", 0),
+                    "total_elapsed_time": msg.get("total_elapsed_time", 0),
+                    "portfolio_value": msg.get("portfolio_value", 0),
+                    "portfolio_weights": msg.get("portfolio_weights", {}),
+                    "message": msg.get("message", ""),
+                }
+            )
+            st_progress_q.put(
+                {
+                    "solver": solver_name,
+                    "status": "period_plot_update",
+                    "cum_dates": msg["cumulative_dates"],
+                    "cum_values": msg["cumulative_values"],
+                    "bh_dates": bh_index,
+                    "bh_values": bh_values,
+                    "rebal_dates": msg["rebal_dates"],
+                    "period": msg["period"],
+                    "total_periods": msg["total_periods"],
+                }
+            )
 
         elif status == "completed":
-            st_progress_q.put({
-                "solver": solver_name, "status": "completed",
-                "total_elapsed_time": msg.get("total_elapsed_time", 0),
-                "total_solve_time": msg.get("total_solve_time", 0),
-                "cum_dates": msg["cumulative_dates"],
-                "cum_values": msg["cumulative_values"],
-                "bh_dates": msg.get("bh_index", bh_index),
-                "bh_values": msg.get("bh_values", bh_values),
-                "rebal_dates": msg["rebal_dates"],
-                "message": msg.get("message", ""),
-            })
+            st_progress_q.put(
+                {
+                    "solver": solver_name,
+                    "status": "completed",
+                    "total_elapsed_time": msg.get("total_elapsed_time", 0),
+                    "total_solve_time": msg.get("total_solve_time", 0),
+                    "cum_dates": msg["cumulative_dates"],
+                    "cum_values": msg["cumulative_values"],
+                    "bh_dates": msg.get("bh_index", bh_index),
+                    "bh_values": msg.get("bh_values", bh_values),
+                    "rebal_dates": msg["rebal_dates"],
+                    "message": msg.get("message", ""),
+                }
+            )
 
             results_df = pd.DataFrame.from_dict(msg.get("results_df_dict", {}))
-            bh_series = pd.Series(msg.get("bh_values", bh_values),
-                                  index=pd.to_datetime(msg.get("bh_index", bh_index)))
-            cum_series = pd.Series(msg["cumulative_values"],
-                                   index=pd.to_datetime(msg["cumulative_dates"]),
-                                   name="cumulative_portfolio_value")
+            bh_series = pd.Series(
+                msg.get("bh_values", bh_values),
+                index=pd.to_datetime(msg.get("bh_index", bh_index)),
+            )
+            cum_series = pd.Series(
+                msg["cumulative_values"],
+                index=pd.to_datetime(msg["cumulative_dates"]),
+                name="cumulative_portfolio_value",
+            )
 
-            st_result_q.put({
-                "success": True,
-                "solver_name": solver_name,
-                "results_df": results_df,
-                "portfolio_snapshots": msg.get("portfolio_snapshots", {}),
-                "cumulative_series": cum_series,
-                "baseline_series": bh_series,
-                "fig": None,
-                "total_solve_time": msg.get("total_solve_time", 0),
-                "total_kde_time": msg.get("total_kde_time", 0),
-                "total_elapsed_time": msg.get("total_elapsed_time", 0),
-                "rebal_count": msg.get("rebal_count", 0),
-                "error": None,
-            })
+            st_result_q.put(
+                {
+                    "success": True,
+                    "solver_name": solver_name,
+                    "results_df": results_df,
+                    "portfolio_snapshots": msg.get("portfolio_snapshots", {}),
+                    "cumulative_series": cum_series,
+                    "baseline_series": bh_series,
+                    "fig": None,
+                    "total_solve_time": msg.get("total_solve_time", 0),
+                    "total_kde_time": msg.get("total_kde_time", 0),
+                    "total_elapsed_time": msg.get("total_elapsed_time", 0),
+                    "rebal_count": msg.get("rebal_count", 0),
+                    "error": None,
+                }
+            )
             break
 
         elif status == "error":
-            st_progress_q.put({"solver": solver_name, "status": "error",
-                                "message": msg.get("message", "")})
+            st_progress_q.put(
+                {
+                    "solver": solver_name,
+                    "status": "error",
+                    "message": msg.get("message", ""),
+                }
+            )
             st_result_q.put(_create_error_result(solver_name, msg.get("error", "")))
             break
 
@@ -1770,8 +2090,20 @@ def run_progressive_rebalancing(
     cpu_reopt_snapshot = {}
 
     # Smooth animation buffers: store latest full data, reveal progressively
-    gpu_plot_data = {"cum_dates": [], "cum_values": [], "bh_dates": [], "bh_values": [], "rebal_dates": []}
-    cpu_plot_data = {"cum_dates": [], "cum_values": [], "bh_dates": [], "bh_values": [], "rebal_dates": []}
+    gpu_plot_data = {
+        "cum_dates": [],
+        "cum_values": [],
+        "bh_dates": [],
+        "bh_values": [],
+        "rebal_dates": [],
+    }
+    cpu_plot_data = {
+        "cum_dates": [],
+        "cum_values": [],
+        "bh_dates": [],
+        "bh_values": [],
+        "rebal_dates": [],
+    }
     gpu_display_idx = 0
     cpu_display_idx = 0
     gpu_plotly_rendered = False
@@ -1809,14 +2141,23 @@ def run_progressive_rebalancing(
                     if _gpw:
                         try:
                             if upd.get("reoptimized", False):
-                                gpu_prev_weights = gpu_reopt_snapshot.copy() if gpu_reopt_snapshot else {}
+                                gpu_prev_weights = (
+                                    gpu_reopt_snapshot.copy()
+                                    if gpu_reopt_snapshot
+                                    else {}
+                                )
                                 gpu_reopt_snapshot = _gpw.copy()
                             _hfig = _build_portfolio_treemap(
-                                _gpw, "— GPU", notional=notional,
-                                mask_names=blog_mode, prev_weights=gpu_prev_weights,
+                                _gpw,
+                                "— GPU",
+                                notional=notional,
+                                mask_names=blog_mode,
+                                prev_weights=gpu_prev_weights,
                             )
                             gpu_heatmap_container.plotly_chart(
-                                _hfig, use_container_width=True, key=_next_key("gpu_hm"),
+                                _hfig,
+                                use_container_width=True,
+                                key=_next_key("gpu_hm"),
                             )
                         except Exception:
                             pass
@@ -1858,7 +2199,9 @@ def run_progressive_rebalancing(
                         "rebal_dates": upd.get("rebal_dates", []),
                     }
                     gpu_display_idx = len(gpu_plot_data["cum_dates"])
-                    gpu_final_time = upd.get("total_elapsed_time", time.time() - loop_start_time)
+                    gpu_final_time = upd.get(
+                        "total_elapsed_time", time.time() - loop_start_time
+                    )
                     gpu_final_solve = upd.get("total_solve_time", 0.0)
                     with gpu_progress_placeholder.container():
                         st.success(f"GPU completed (solver: {gpu_final_solve:.2f}s)")
@@ -1896,14 +2239,23 @@ def run_progressive_rebalancing(
                     if _cpw:
                         try:
                             if upd.get("reoptimized", False):
-                                cpu_prev_weights = cpu_reopt_snapshot.copy() if cpu_reopt_snapshot else {}
+                                cpu_prev_weights = (
+                                    cpu_reopt_snapshot.copy()
+                                    if cpu_reopt_snapshot
+                                    else {}
+                                )
                                 cpu_reopt_snapshot = _cpw.copy()
                             _hfig = _build_portfolio_treemap(
-                                _cpw, "— CPU", notional=notional,
-                                mask_names=blog_mode, prev_weights=cpu_prev_weights,
+                                _cpw,
+                                "— CPU",
+                                notional=notional,
+                                mask_names=blog_mode,
+                                prev_weights=cpu_prev_weights,
                             )
                             cpu_heatmap_container.plotly_chart(
-                                _hfig, use_container_width=True, key=_next_key("cpu_hm"),
+                                _hfig,
+                                use_container_width=True,
+                                key=_next_key("cpu_hm"),
                             )
                         except Exception:
                             pass
@@ -1945,7 +2297,9 @@ def run_progressive_rebalancing(
                         "rebal_dates": upd.get("rebal_dates", []),
                     }
                     cpu_display_idx = len(cpu_plot_data["cum_dates"])
-                    cpu_final_time = upd.get("total_elapsed_time", time.time() - loop_start_time)
+                    cpu_final_time = upd.get(
+                        "total_elapsed_time", time.time() - loop_start_time
+                    )
                     cpu_final_solve = upd.get("total_solve_time", 0.0)
                     with cpu_progress_placeholder.container():
                         st.success(f"CPU completed (solver: {cpu_final_solve:.2f}s)")
@@ -2022,13 +2376,20 @@ def run_progressive_rebalancing(
         if gpu_done and _gpu_anim_done and not gpu_plotly_rendered:
             gpu_plot_container.plotly_chart(
                 _build_rebalancing_plotly(
-                    gpu_plot_data["cum_dates"], gpu_plot_data["cum_values"],
-                    gpu_plot_data["bh_dates"], gpu_plot_data["bh_values"],
-                    gpu_plot_data["rebal_dates"], "— GPU",
-                ), use_container_width=True, key=_next_key("gpu_plot"),
+                    gpu_plot_data["cum_dates"],
+                    gpu_plot_data["cum_values"],
+                    gpu_plot_data["bh_dates"],
+                    gpu_plot_data["bh_values"],
+                    gpu_plot_data["rebal_dates"],
+                    "— GPU",
+                ),
+                use_container_width=True,
+                key=_next_key("gpu_plot"),
             )
             gpu_plotly_rendered = True
-        elif not _gpu_anim_done and (gpu_display_idx < _gpu_total or (gpu_display_idx == 0 and _gpu_bh_total > 0)):
+        elif not _gpu_anim_done and (
+            gpu_display_idx < _gpu_total or (gpu_display_idx == 0 and _gpu_bh_total > 0)
+        ):
             gpu_display_idx = min(gpu_display_idx + _DAYS_PER_FRAME, _gpu_total)
             _bh_idx = min(gpu_display_idx, _gpu_bh_total)
             gpu_plot_container.image(
@@ -2037,21 +2398,30 @@ def run_progressive_rebalancing(
                     gpu_plot_data["cum_values"][:gpu_display_idx],
                     gpu_plot_data["bh_dates"][:_bh_idx],
                     gpu_plot_data["bh_values"][:_bh_idx],
-                    gpu_plot_data["rebal_dates"], "— GPU",
-                ), use_container_width=True,
+                    gpu_plot_data["rebal_dates"],
+                    "— GPU",
+                ),
+                use_container_width=True,
             )
 
         # CPU: animate or switch to interactive Plotly when done
         if cpu_done and _cpu_anim_done and not cpu_plotly_rendered:
             cpu_plot_container.plotly_chart(
                 _build_rebalancing_plotly(
-                    cpu_plot_data["cum_dates"], cpu_plot_data["cum_values"],
-                    cpu_plot_data["bh_dates"], cpu_plot_data["bh_values"],
-                    cpu_plot_data["rebal_dates"], "— CPU",
-                ), use_container_width=True, key=_next_key("cpu_plot"),
+                    cpu_plot_data["cum_dates"],
+                    cpu_plot_data["cum_values"],
+                    cpu_plot_data["bh_dates"],
+                    cpu_plot_data["bh_values"],
+                    cpu_plot_data["rebal_dates"],
+                    "— CPU",
+                ),
+                use_container_width=True,
+                key=_next_key("cpu_plot"),
             )
             cpu_plotly_rendered = True
-        elif not _cpu_anim_done and (cpu_display_idx < _cpu_total or (cpu_display_idx == 0 and _cpu_bh_total > 0)):
+        elif not _cpu_anim_done and (
+            cpu_display_idx < _cpu_total or (cpu_display_idx == 0 and _cpu_bh_total > 0)
+        ):
             cpu_display_idx = min(cpu_display_idx + _DAYS_PER_FRAME, _cpu_total)
             _bh_idx = min(cpu_display_idx, _cpu_bh_total)
             cpu_plot_container.image(
@@ -2060,8 +2430,10 @@ def run_progressive_rebalancing(
                     cpu_plot_data["cum_values"][:cpu_display_idx],
                     cpu_plot_data["bh_dates"][:_bh_idx],
                     cpu_plot_data["bh_values"][:_bh_idx],
-                    cpu_plot_data["rebal_dates"], "— CPU",
-                ), use_container_width=True,
+                    cpu_plot_data["rebal_dates"],
+                    "— CPU",
+                ),
+                use_container_width=True,
             )
 
         # Exit when both are done and rendered as Plotly
@@ -2101,7 +2473,11 @@ def main():
     """Main Streamlit app"""
 
     # Mask toggle via query param: ?mask=false to show real names
-    blog_mode = str(st.query_params.get("mask", "true")).lower() not in ("false", "0", "no")
+    blog_mode = str(st.query_params.get("mask", "true")).lower() not in (
+        "false",
+        "0",
+        "no",
+    )
 
     # Header (placed in a placeholder so it can be collapsed when the demo runs)
     header_placeholder = st.empty()
@@ -2128,7 +2504,7 @@ def main():
             if DefaultValues.DATASET_NAME in datasets
             else 0
         )
-        _dataset_labels = {ds: f"Dataset {i+1}" for i, ds in enumerate(datasets)}
+        _dataset_labels = {ds: f"Dataset {i + 1}" for i, ds in enumerate(datasets)}
         dataset_name = st.selectbox(
             "Dataset",
             datasets,
@@ -2154,21 +2530,26 @@ def main():
         st.subheader("💼 Portfolio Allocation")
         w_min, w_max = st.slider(
             "Allocation Range per Asset",
-            -0.5, 1.0,
+            -0.5,
+            1.0,
             (float(DefaultValues.W_MIN), max(0.0, float(DefaultValues.W_MAX))),
             0.05,
             help="Weight bounds (w_min, w_max) — min and max fraction of wealth allocated to any single asset. Negative values allow short selling.",
         )
         c_min, c_max = st.slider(
             "Cash Reserve Range",
-            0.0, 1.0,
+            0.0,
+            1.0,
             (float(DefaultValues.C_MIN), float(DefaultValues.C_MAX)),
             0.05,
             help="Cash bounds (c_min, c_max) — min and max fraction of the portfolio held in cash.",
         )
         L_tar = st.slider(
             "Max Leverage",
-            1.0, 3.0, float(DefaultValues.L_TAR), 0.1,
+            1.0,
+            3.0,
+            float(DefaultValues.L_TAR),
+            0.1,
             help="Leverage target (L_tar) — upper bound on the sum of absolute position sizes. 1.0 = fully funded, >1 = leveraged.",
         )
 
@@ -2176,23 +2557,34 @@ def main():
             "Limit Number of Holdings",
             help="Cardinality constraint — restricts the portfolio to a maximum number of assets with non-zero weights.",
         )
-        cardinality = st.slider("Max Holdings", 5, 50, 15, 1) if use_cardinality else None
+        cardinality = (
+            st.slider("Max Holdings", 5, 50, 15, 1) if use_cardinality else None
+        )
 
         # Risk Parameters
         st.subheader("⚖️ Risk Settings")
         risk_aversion = st.slider(
             "Risk Sensitivity",
-            0.1, 5.0, float(DefaultValues.RISK_AVERSION), 0.1,
+            0.1,
+            5.0,
+            float(DefaultValues.RISK_AVERSION),
+            1.2,
             help="Risk aversion (λ) — controls the trade-off between return and risk. Higher values produce more conservative portfolios.",
         )
         confidence = st.slider(
             "Tail-Risk Confidence",
-            0.90, 0.99, float(DefaultValues.CONFIDENCE), 0.01,
+            0.90,
+            0.99,
+            float(DefaultValues.CONFIDENCE),
+            0.01,
             help="CVaR confidence level (α) — probability level for measuring tail risk. 0.95 means the worst 5%% of scenarios are considered.",
         )
         num_scen = st.slider(
             "Simulation Count",
-            5000, 20000, 10000, 1000,
+            5000,
+            20000,
+            10000,
+            1000,
             help="Number of scenarios (num_scen) — how many return scenarios to simulate for risk estimation.",
         )
 
@@ -2385,7 +2777,11 @@ def main():
         )
 
     # Tabs — always visible
-    cover_path = script_dir / "diagrams" / "fsi-visual-portfolio-optimization-blueprint-4539200-r2.png"
+    cover_path = (
+        script_dir
+        / "diagrams"
+        / "fsi-visual-portfolio-optimization-blueprint-4539200-r2.png"
+    )
     arch_path = script_dir / "diagrams" / "arch_diagram.svg"
     bench_img = script_dir / "diagrams" / "dark_b200_cuopt_vs_opensource (1).png"
     gif_path = script_dir / "diagrams" / "rebalancing_gpu_vs_cpu.gif"
@@ -2394,7 +2790,14 @@ def main():
     _switch_to_tab = st.session_state.pop("switch_to_dataset_tab", False)
 
     tab_overview, tab_data, tab_demo, tab_arch, tab_bench, tab_refs = st.tabs(
-        ["📊 Overview", "📁 Dataset", "🚀 Live Demo", "🏗️ Architecture", "📈 Benchmarks", "📚 References"]
+        [
+            "📊 Overview",
+            "📁 Dataset",
+            "🚀 Live Demo",
+            "🏗️ Architecture",
+            "📈 Benchmarks",
+            "📚 References",
+        ]
     )
 
     def _inject_tab_switch(index: int):
@@ -2453,19 +2856,33 @@ def main():
         )
 
     with tab_data:
-        dataset_path_preview = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
+        dataset_path_preview = (
+            workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
+        )
         if dataset_path_preview.exists():
             try:
                 import plotly.graph_objects as go
 
-                df_raw = pd.read_csv(dataset_path_preview, index_col=0, parse_dates=True)
-                _mask_ts = (df_raw.index >= pd.Timestamp(start_date)) & (df_raw.index <= pd.Timestamp(end_date))
+                df_raw = pd.read_csv(
+                    dataset_path_preview, index_col=0, parse_dates=True
+                )
+                _mask_ts = (df_raw.index >= pd.Timestamp(start_date)) & (
+                    df_raw.index <= pd.Timestamp(end_date)
+                )
                 df_filtered = df_raw.loc[_mask_ts]
                 if df_filtered.empty:
                     df_filtered = df_raw
 
-                _sd = start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else str(start_date)
-                _ed = end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else str(end_date)
+                _sd = (
+                    start_date.strftime("%Y-%m-%d")
+                    if hasattr(start_date, "strftime")
+                    else str(start_date)
+                )
+                _ed = (
+                    end_date.strftime("%Y-%m-%d")
+                    if hasattr(end_date, "strftime")
+                    else str(end_date)
+                )
                 regime_preview = {"name": "preview", "range": (_sd, _ed)}
                 rcs_preview = ReturnsComputeSettings(return_type=return_type, freq=1)
                 returns_dict_preview = utils.calculate_returns(
@@ -2473,7 +2890,11 @@ def main():
                 )
                 returns_df = returns_dict_preview["returns"]
 
-                _ds_label = _dataset_labels.get(dataset_name, "Dataset") if blog_mode else dataset_name
+                _ds_label = (
+                    _dataset_labels.get(dataset_name, "Dataset")
+                    if blog_mode
+                    else dataset_name
+                )
                 _rt_label = return_type.capitalize()
 
                 col_s1, col_s2, col_s3 = st.columns(3)
@@ -2501,46 +2922,74 @@ def main():
                     _mean = df.mean(axis=1)
 
                     for col in df.columns:
-                        fig.add_trace(go.Scatter(
-                            x=df.index, y=df[col],
-                            mode="lines", name=col if not blog_mode else "",
-                            line=dict(width=1.0), opacity=0.4,
-                            showlegend=False, hoverinfo="skip",
-                        ))
+                        fig.add_trace(
+                            go.Scatter(
+                                x=df.index,
+                                y=df[col],
+                                mode="lines",
+                                name=col if not blog_mode else "",
+                                line=dict(width=1.0),
+                                opacity=0.4,
+                                showlegend=False,
+                                hoverinfo="skip",
+                            )
+                        )
 
-                    fig.add_trace(go.Scatter(
-                        x=_high.index, y=_high.values, mode="lines",
-                        name="High", line=dict(width=0, color="rgba(118,185,0,0)"),
-                        showlegend=False, hoverinfo="skip",
-                    ))
-                    fig.add_trace(go.Scatter(
-                        x=_low.index, y=_low.values, mode="lines",
-                        name="Low", line=dict(width=0, color="rgba(118,185,0,0)"),
-                        fill="tonexty", fillcolor="rgba(118,185,0,0.08)",
-                        showlegend=False, hoverinfo="skip",
-                    ))
+                    fig.add_trace(
+                        go.Scatter(
+                            x=_high.index,
+                            y=_high.values,
+                            mode="lines",
+                            name="High",
+                            line=dict(width=0, color="rgba(118,185,0,0)"),
+                            showlegend=False,
+                            hoverinfo="skip",
+                        )
+                    )
+                    fig.add_trace(
+                        go.Scatter(
+                            x=_low.index,
+                            y=_low.values,
+                            mode="lines",
+                            name="Low",
+                            line=dict(width=0, color="rgba(118,185,0,0)"),
+                            fill="tonexty",
+                            fillcolor="rgba(118,185,0,0.08)",
+                            showlegend=False,
+                            hoverinfo="skip",
+                        )
+                    )
                     # Invisible trace for hover stats only
-                    fig.add_trace(go.Scatter(
-                        x=_mean.index, y=_mean.values, mode="lines",
-                        name="Summary", line=dict(width=0, color="rgba(0,0,0,0)"),
-                        showlegend=False,
-                        customdata=np.stack([_high.values, _low.values], axis=-1),
-                        hovertemplate=(
-                            f"<b>Cross-Section</b><br>"
-                            f"High: %{{customdata[0]:{value_fmt}}}<br>"
-                            f"Mean: %{{y:{value_fmt}}}<br>"
-                            f"Low: %{{customdata[1]:{value_fmt}}}"
-                            f"<extra></extra>"
-                        ),
-                    ))
+                    fig.add_trace(
+                        go.Scatter(
+                            x=_mean.index,
+                            y=_mean.values,
+                            mode="lines",
+                            name="Summary",
+                            line=dict(width=0, color="rgba(0,0,0,0)"),
+                            showlegend=False,
+                            customdata=np.stack([_high.values, _low.values], axis=-1),
+                            hovertemplate=(
+                                f"<b>Cross-Section</b><br>"
+                                f"High: %{{customdata[0]:{value_fmt}}}<br>"
+                                f"Mean: %{{y:{value_fmt}}}<br>"
+                                f"Low: %{{customdata[1]:{value_fmt}}}"
+                                f"<extra></extra>"
+                            ),
+                        )
+                    )
 
                 # Normalized price chart
                 normalised = df_filtered.div(df_filtered.iloc[0])
                 fig_price = go.Figure()
-                _add_summary_bands(fig_price, normalised, value_fmt=".3f", value_label="Price")
+                _add_summary_bands(
+                    fig_price, normalised, value_fmt=".3f", value_label="Price"
+                )
                 fig_price.update_layout(
-                    title=dict(text=f"{_ds_label} — Normalized Closing Prices",
-                               font=dict(size=16, color="#fafafa")),
+                    title=dict(
+                        text=f"{_ds_label} — Normalized Closing Prices",
+                        font=dict(size=16, color="#fafafa"),
+                    ),
                     yaxis_title="Price (normalized to 1)",
                     **_plot_layout,
                 )
@@ -2548,11 +2997,17 @@ def main():
 
                 # Returns chart
                 fig_returns = go.Figure()
-                _add_summary_bands(fig_returns, returns_df, value_fmt=".4f", value_label="Return")
-                fig_returns.add_hline(y=0, line_dash="dash", line_color="#555", line_width=0.8)
+                _add_summary_bands(
+                    fig_returns, returns_df, value_fmt=".4f", value_label="Return"
+                )
+                fig_returns.add_hline(
+                    y=0, line_dash="dash", line_color="#555", line_width=0.8
+                )
                 fig_returns.update_layout(
-                    title=dict(text=f"{_ds_label} — {_rt_label} Returns",
-                               font=dict(size=16, color="#fafafa")),
+                    title=dict(
+                        text=f"{_ds_label} — {_rt_label} Returns",
+                        font=dict(size=16, color="#fafafa"),
+                    ),
                     yaxis_title=f"{_rt_label} Return",
                     **_plot_layout,
                 )
@@ -2582,9 +3037,7 @@ def main():
         )
         if bench_img.exists():
             st.image(str(bench_img), width="stretch")
-        st.caption(
-            "GPU speedups grow with problem size: up to 232x at 50k scenarios."
-        )
+        st.caption("GPU speedups grow with problem size: up to 232x at 50k scenarios.")
 
     with tab_refs:
         qpo_qr = script_dir / "diagrams" / "QPO_Learn_QR.svg"
@@ -2621,232 +3074,272 @@ def main():
 
     # Run optimization when button is pressed
     if run_btn:
-      with tab_demo:
-        _inject_tab_switch(2)
-        dataset_path = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
-        if not dataset_path.exists():
-            st.error(f"❌ Dataset not found: {dataset_path}")
-            st.stop()
-
-        returns_compute_settings = ReturnsComputeSettings(
-            return_type=return_type, freq=1
-        )
-        gpu_scenario_settings = ScenarioGenerationSettings(
-            num_scen=num_scen,
-            fit_type='kde',
-            kde_settings=KDESettings(
-                bandwidth=0.01, kernel='gaussian', device='GPU'
-            ),
-            verbose=False,
-        )
-        cpu_scenario_settings = ScenarioGenerationSettings(
-            num_scen=num_scen,
-            fit_type='kde',
-            kde_settings=KDESettings(
-                bandwidth=0.01, kernel='gaussian', device='CPU'
-            ),
-            verbose=False,
-        )
-
-        trading_range = (start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
-        cvar_params = CvarParameters(
-            w_min=w_min,
-            w_max=w_max,
-            c_min=c_min,
-            c_max=c_max,
-            L_tar=L_tar,
-            T_tar=turnover_limit,
-            cvar_limit=cvar_hard_limit,
-            risk_aversion=risk_aversion,
-            confidence=confidence,
-            cardinality=cardinality,
-        )
-
-        criteria = {"type": strategy_key, "threshold": float(threshold)}
-        if strategy_key == "drift_from_optimal":
-            criteria["norm"] = int(norm_choice or 2)
-
-        col_gpu, col_cpu = st.columns([1, 1], gap="medium")
-        with col_gpu:
-            st.markdown("### 🚀 GPU Results")
-            gpu_solving_placeholder = st.empty()
-            gpu_plot_container = st.empty()
-            gpu_heatmap_container = st.empty()
-            gpu_progress_placeholder = st.empty()
-        with col_cpu:
-            st.markdown("### 🖥️ CPU Results")
-            cpu_solving_placeholder = st.empty()
-            cpu_plot_container = st.empty()
-            cpu_heatmap_container = st.empty()
-            cpu_progress_placeholder = st.empty()
-
-        # Device info below the graphs
-        import subprocess as _sp
-        gpu_info = "N/A"
-        try:
-            _r = _sp.run(
-                ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
-                capture_output=True, text=True, timeout=5,
+        with tab_demo:
+            _inject_tab_switch(2)
+            dataset_path = (
+                workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
             )
-            if _r.returncode == 0:
-                gpu_info = _r.stdout.strip().splitlines()[0].split(",")[0].strip()
-        except Exception:
-            pass
-        cpu_info = "N/A"
-        try:
-            _r = _sp.run(["lscpu"], capture_output=True, text=True, timeout=5)
-            if _r.returncode == 0:
-                for line in _r.stdout.splitlines():
-                    if "Model name" in line:
-                        cpu_info = line.split(":", 1)[1].strip()
-                        break
-        except Exception:
-            pass
-        if cpu_info == "N/A":
+            if not dataset_path.exists():
+                st.error(f"❌ Dataset not found: {dataset_path}")
+                st.stop()
+
+            returns_compute_settings = ReturnsComputeSettings(
+                return_type=return_type, freq=1
+            )
+            gpu_scenario_settings = ScenarioGenerationSettings(
+                num_scen=num_scen,
+                fit_type="kde",
+                kde_settings=KDESettings(
+                    bandwidth=0.01, kernel="gaussian", device="GPU"
+                ),
+                verbose=False,
+            )
+            cpu_scenario_settings = ScenarioGenerationSettings(
+                num_scen=num_scen,
+                fit_type="kde",
+                kde_settings=KDESettings(
+                    bandwidth=0.01, kernel="gaussian", device="CPU"
+                ),
+                verbose=False,
+            )
+
+            trading_range = (
+                start_date.strftime("%Y-%m-%d"),
+                end_date.strftime("%Y-%m-%d"),
+            )
+            cvar_params = CvarParameters(
+                w_min=w_min,
+                w_max=w_max,
+                c_min=c_min,
+                c_max=c_max,
+                L_tar=L_tar,
+                T_tar=turnover_limit,
+                cvar_limit=cvar_hard_limit,
+                risk_aversion=risk_aversion,
+                confidence=confidence,
+                cardinality=cardinality,
+            )
+
+            criteria = {"type": strategy_key, "threshold": float(threshold)}
+            if strategy_key == "drift_from_optimal":
+                criteria["norm"] = int(norm_choice or 2)
+
+            col_gpu, col_cpu = st.columns([1, 1], gap="medium")
+            with col_gpu:
+                st.markdown("### 🚀 GPU Results")
+                gpu_solving_placeholder = st.empty()
+                gpu_plot_container = st.empty()
+                gpu_heatmap_container = st.empty()
+                gpu_progress_placeholder = st.empty()
+            with col_cpu:
+                st.markdown("### 🖥️ CPU Results")
+                cpu_solving_placeholder = st.empty()
+                cpu_plot_container = st.empty()
+                cpu_heatmap_container = st.empty()
+                cpu_progress_placeholder = st.empty()
+
+            # Device info below the graphs
+            import subprocess as _sp
+
+            gpu_info = "N/A"
             try:
                 _r = _sp.run(
-                    ["sysctl", "-n", "machdep.cpu.brand_string"],
-                    capture_output=True, text=True, timeout=5,
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=name,memory.total",
+                        "--format=csv,noheader,nounits",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 if _r.returncode == 0:
-                    cpu_info = _r.stdout.strip()
+                    gpu_info = _r.stdout.strip().splitlines()[0].split(",")[0].strip()
             except Exception:
                 pass
-        col_dev1, col_dev2 = st.columns(2)
-        with col_dev1:
-            st.caption(f"🚀 **GPU:** {gpu_info}")
-        with col_dev2:
-            st.caption(f"🖥️ **CPU:** {cpu_info}")
-
-        results = run_progressive_rebalancing(
-            dataset_path=str(dataset_path),
-            trading_range=trading_range,
-            returns_compute_settings=returns_compute_settings,
-            gpu_scenario_settings=gpu_scenario_settings,
-            cpu_scenario_settings=cpu_scenario_settings,
-            cvar_params=cvar_params,
-            look_back_window=int(look_back_window),
-            look_forward_window=int(look_forward_window),
-            re_optimize_criteria=criteria,
-            transaction_cost_factor=float(transaction_cost_factor),
-            strategy_display_name=strategy_display[strategy_key],
-            gpu_plot_container=gpu_plot_container,
-            cpu_plot_container=cpu_plot_container,
-            gpu_heatmap_container=gpu_heatmap_container,
-            cpu_heatmap_container=cpu_heatmap_container,
-            gpu_progress_placeholder=gpu_progress_placeholder,
-            cpu_progress_placeholder=cpu_progress_placeholder,
-            gpu_solving_placeholder=gpu_solving_placeholder,
-            cpu_solving_placeholder=cpu_solving_placeholder,
-            header_placeholder=header_placeholder,
-            cpu_solver_choice=cpu_solver_choice,
-            blog_mode=blog_mode,
-            notional=int(notional),
-        )
-
-        # Summaries
-        st.markdown(
-            '<div class="section-header">📊 Summary</div>', unsafe_allow_html=True
-        )
-        g = results.get("GPU", {})
-        c = results.get("CPU", {})
-
-        col1, col2, col3 = st.columns([1, 1, 1])
-
-        with col1:
-            if g.get("success") and c.get("success"):
-                st.metric("Number of Rebalances", g.get("rebal_count", 0))
-                gt_solve = max(1e-9, g.get("total_solve_time", 0.0))
-                ct_solve = max(1e-9, c.get("total_solve_time", 0.0))
-                solve_speedup = ct_solve / gt_solve
-                st.metric("⚡ Solver Speedup", f"{solve_speedup:.1f}x faster")
-            else:
-                st.error("Speedup calculation failed")
-
-        with col2:
-            if g.get("success"):
-                st.metric("⚡ GPU Solve Time", f"{g.get('total_solve_time', 0.0):.3f}s")
-                st.metric("🔬 GPU KDE Time", f"{g.get('total_kde_time', 0.0):.3f}s")
-            else:
-                st.error("GPU failed")
-
-        with col3:
-            if c.get("success"):
-                st.metric("⚡ CPU Solve Time", f"{c.get('total_solve_time', 0.0):.3f}s")
-                st.metric("🔬 CPU KDE Time", f"{c.get('total_kde_time', 0.0):.3f}s")
-            else:
-                st.error("CPU failed")
-
-        def _format_portfolio_snapshot(weights_dict, cutoff=1e-3, mask_names=True):
-            """Format a single snapshot in print_clean style, optionally masking tickers."""
-            cash = weights_dict.get("cash", 0.0)
-            positions = {k: v for k, v in weights_dict.items() if k != "cash"}
-            tickers_sorted = sorted(positions.keys())
-            if mask_names:
-                mask = {t: f"Asset {i+1}" for i, t in enumerate(tickers_sorted)}
-            else:
-                mask = {t: t for t in tickers_sorted}
-
-            long = {mask[t]: v for t, v in positions.items() if v > cutoff}
-            short = {mask[t]: v for t, v in positions.items() if v < -cutoff}
-
-            lines = []
-            if long:
-                lines.append(f"**LONG POSITIONS** ({len(long)} assets)")
-                lines.append("| Asset | Weight | % |")
-                lines.append("|-------|-------:|---:|")
-                total_long = 0.0
-                for name, w in sorted(long.items(), key=lambda x: -x[1]):
-                    lines.append(f"| {name} | {w:.4f} | {w*100:.2f}% |")
-                    total_long += w
-                lines.append(f"| **Total Long** | **{total_long:.4f}** | **{total_long*100:.2f}%** |")
-
-            if short:
-                lines.append(f"\n**SHORT POSITIONS** ({len(short)} assets)")
-                lines.append("| Asset | Weight | % |")
-                lines.append("|-------|-------:|---:|")
-                total_short = 0.0
-                for name, w in sorted(short.items(), key=lambda x: x[1]):
-                    lines.append(f"| {name} | {w:.4f} | {w*100:.2f}% |")
-                    total_short += w
-                lines.append(f"| **Total Short** | **{total_short:.4f}** | **{total_short*100:.2f}%** |")
-
-            net_equity = sum(positions.values())
-            gross = sum(abs(v) for v in positions.values())
-            n_holdings = sum(1 for v in positions.values() if abs(v) > cutoff)
-            lines.append("\n**CASH & SUMMARY**")
-            lines.append(f"- Cash: {cash:.4f} ({cash*100:.2f}%)")
-            lines.append(f"- Net Equity: {net_equity:.4f} ({net_equity*100:.2f}%)")
-            lines.append(f"- Gross Exposure: {gross:.4f} ({gross*100:.2f}%)")
-            lines.append(f"- Holdings: {n_holdings}")
-            return "\n".join(lines)
-
-        def _render_period_table(label, result_dict):
-            """Render period results table with expandable portfolio composition."""
-            if not (result_dict.get("success") and isinstance(result_dict.get("results_df"), pd.DataFrame)):
-                return
-            st.markdown(f"**{label}**")
-            df = result_dict["results_df"].reset_index().rename(columns={"index": "date"})
-            df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
-            st.dataframe(df, hide_index=True)
-
-            snapshots = result_dict.get("portfolio_snapshots", {})
-            if snapshots:
-                with st.expander(f"📂 {label} — Portfolio Composition"):
-                    date_keys = list(snapshots.keys())
-                    date_labels = [str(d).split("T")[0].split(" ")[0] for d in date_keys]
-                    selected = st.selectbox(
-                        "Select date", date_labels,
-                        key=f"ptf_date_{label}",
+            cpu_info = "N/A"
+            try:
+                _r = _sp.run(["lscpu"], capture_output=True, text=True, timeout=5)
+                if _r.returncode == 0:
+                    for line in _r.stdout.splitlines():
+                        if "Model name" in line:
+                            cpu_info = line.split(":", 1)[1].strip()
+                            break
+            except Exception:
+                pass
+            if cpu_info == "N/A":
+                try:
+                    _r = _sp.run(
+                        ["sysctl", "-n", "machdep.cpu.brand_string"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
                     )
-                    idx = date_labels.index(selected)
-                    st.markdown(_format_portfolio_snapshot(snapshots[date_keys[idx]], mask_names=blog_mode))
+                    if _r.returncode == 0:
+                        cpu_info = _r.stdout.strip()
+                except Exception:
+                    pass
+            col_dev1, col_dev2 = st.columns(2)
+            with col_dev1:
+                st.caption(f"🚀 **GPU:** {gpu_info}")
+            with col_dev2:
+                st.caption(f"🖥️ **CPU:** {cpu_info}")
 
-        # Detailed tables
-        with st.expander("📋 Detailed Period Results", expanded=False):
-            _render_period_table("GPU Period Results", g)
-            cpu_label = "CPU Period Results"
-            _render_period_table(cpu_label, c)
+            results = run_progressive_rebalancing(
+                dataset_path=str(dataset_path),
+                trading_range=trading_range,
+                returns_compute_settings=returns_compute_settings,
+                gpu_scenario_settings=gpu_scenario_settings,
+                cpu_scenario_settings=cpu_scenario_settings,
+                cvar_params=cvar_params,
+                look_back_window=int(look_back_window),
+                look_forward_window=int(look_forward_window),
+                re_optimize_criteria=criteria,
+                transaction_cost_factor=float(transaction_cost_factor),
+                strategy_display_name=strategy_display[strategy_key],
+                gpu_plot_container=gpu_plot_container,
+                cpu_plot_container=cpu_plot_container,
+                gpu_heatmap_container=gpu_heatmap_container,
+                cpu_heatmap_container=cpu_heatmap_container,
+                gpu_progress_placeholder=gpu_progress_placeholder,
+                cpu_progress_placeholder=cpu_progress_placeholder,
+                gpu_solving_placeholder=gpu_solving_placeholder,
+                cpu_solving_placeholder=cpu_solving_placeholder,
+                header_placeholder=header_placeholder,
+                cpu_solver_choice=cpu_solver_choice,
+                blog_mode=blog_mode,
+                notional=int(notional),
+            )
+
+            # Summaries
+            st.markdown(
+                '<div class="section-header">📊 Summary</div>', unsafe_allow_html=True
+            )
+            g = results.get("GPU", {})
+            c = results.get("CPU", {})
+
+            col1, col2, col3 = st.columns([1, 1, 1])
+
+            with col1:
+                if g.get("success") and c.get("success"):
+                    st.metric("Number of Rebalances", g.get("rebal_count", 0))
+                    gt_solve = max(1e-9, g.get("total_solve_time", 0.0))
+                    ct_solve = max(1e-9, c.get("total_solve_time", 0.0))
+                    solve_speedup = ct_solve / gt_solve
+                    st.metric("⚡ Solver Speedup", f"{solve_speedup:.1f}x faster")
+                else:
+                    st.error("Speedup calculation failed")
+
+            with col2:
+                if g.get("success"):
+                    st.metric(
+                        "⚡ GPU Solve Time", f"{g.get('total_solve_time', 0.0):.3f}s"
+                    )
+                    st.metric("🔬 GPU KDE Time", f"{g.get('total_kde_time', 0.0):.3f}s")
+                else:
+                    st.error("GPU failed")
+
+            with col3:
+                if c.get("success"):
+                    st.metric(
+                        "⚡ CPU Solve Time", f"{c.get('total_solve_time', 0.0):.3f}s"
+                    )
+                    st.metric("🔬 CPU KDE Time", f"{c.get('total_kde_time', 0.0):.3f}s")
+                else:
+                    st.error("CPU failed")
+
+            def _format_portfolio_snapshot(weights_dict, cutoff=1e-3, mask_names=True):
+                """Format a single snapshot in print_clean style, optionally masking tickers."""
+                cash = weights_dict.get("cash", 0.0)
+                positions = {k: v for k, v in weights_dict.items() if k != "cash"}
+                tickers_sorted = sorted(positions.keys())
+                if mask_names:
+                    mask = {t: f"Asset {i + 1}" for i, t in enumerate(tickers_sorted)}
+                else:
+                    mask = {t: t for t in tickers_sorted}
+
+                long = {mask[t]: v for t, v in positions.items() if v > cutoff}
+                short = {mask[t]: v for t, v in positions.items() if v < -cutoff}
+
+                lines = []
+                if long:
+                    lines.append(f"**LONG POSITIONS** ({len(long)} assets)")
+                    lines.append("| Asset | Weight | % |")
+                    lines.append("|-------|-------:|---:|")
+                    total_long = 0.0
+                    for name, w in sorted(long.items(), key=lambda x: -x[1]):
+                        lines.append(f"| {name} | {w:.4f} | {w * 100:.2f}% |")
+                        total_long += w
+                    lines.append(
+                        f"| **Total Long** | **{total_long:.4f}** | **{total_long * 100:.2f}%** |"
+                    )
+
+                if short:
+                    lines.append(f"\n**SHORT POSITIONS** ({len(short)} assets)")
+                    lines.append("| Asset | Weight | % |")
+                    lines.append("|-------|-------:|---:|")
+                    total_short = 0.0
+                    for name, w in sorted(short.items(), key=lambda x: x[1]):
+                        lines.append(f"| {name} | {w:.4f} | {w * 100:.2f}% |")
+                        total_short += w
+                    lines.append(
+                        f"| **Total Short** | **{total_short:.4f}** | **{total_short * 100:.2f}%** |"
+                    )
+
+                net_equity = sum(positions.values())
+                gross = sum(abs(v) for v in positions.values())
+                n_holdings = sum(1 for v in positions.values() if abs(v) > cutoff)
+                lines.append("\n**CASH & SUMMARY**")
+                lines.append(f"- Cash: {cash:.4f} ({cash * 100:.2f}%)")
+                lines.append(
+                    f"- Net Equity: {net_equity:.4f} ({net_equity * 100:.2f}%)"
+                )
+                lines.append(f"- Gross Exposure: {gross:.4f} ({gross * 100:.2f}%)")
+                lines.append(f"- Holdings: {n_holdings}")
+                return "\n".join(lines)
+
+            def _render_period_table(label, result_dict):
+                """Render period results table with heatmap portfolio viewer."""
+                if not (
+                    result_dict.get("success")
+                    and isinstance(result_dict.get("results_df"), pd.DataFrame)
+                ):
+                    return
+                st.markdown(f"**{label}**")
+                df = (
+                    result_dict["results_df"]
+                    .reset_index()
+                    .rename(columns={"index": "date"})
+                )
+                df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+                st.dataframe(df, hide_index=True)
+
+                snapshots = result_dict.get("portfolio_snapshots", {})
+                if snapshots:
+                    with st.expander(f"📂 {label} — Portfolio Heatmap"):
+                        date_keys = list(snapshots.keys())
+                        date_labels = [
+                            str(d).split("T")[0].split(" ")[0] for d in date_keys
+                        ]
+                        selected = st.selectbox(
+                            "Select rebalancing period",
+                            date_labels,
+                            key=f"ptf_date_{label}",
+                        )
+                        idx = date_labels.index(selected)
+                        _hfig = _build_portfolio_treemap(
+                            snapshots[date_keys[idx]],
+                            f"— {selected}",
+                            notional=int(notional),
+                            mask_names=blog_mode,
+                        )
+                        st.plotly_chart(_hfig, use_container_width=True, key=f"ptf_hm_{label}_{idx}")
+
+            # Detailed tables
+            with st.expander("📋 Detailed Period Results", expanded=False):
+                _render_period_table("GPU Period Results", g)
+                cpu_label = "CPU Period Results"
+                _render_period_table(cpu_label, c)
 
     # Disclaimer at the bottom
     st.markdown("---")
