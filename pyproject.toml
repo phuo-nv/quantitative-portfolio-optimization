@@ -29,10 +29,6 @@ cuda13 = [
     "cuml-cu13==26.02.*",
     "cuopt-cu13==26.02.*",
 ]
-demo = [
-    "streamlit",
-    "plotly",
-]
 
 [tool.black]
 line-length = 88

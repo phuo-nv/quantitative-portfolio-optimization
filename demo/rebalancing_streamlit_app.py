@@ -2398,7 +2398,7 @@ def run_progressive_rebalancing(
                     with gpu_solving_placeholder.container():
                         st.progress(
                             min(1.0, period / total),
-                            text=f"⏳ Period {period + 1}/{total} · Portfolio: ${value:.3f}",
+                            text=f"⏳ Period {period + 1}/{total} · Portfolio: {value:.3f}",
                         )
                 else:
                     with gpu_solving_placeholder.container():
@@ -2412,7 +2412,7 @@ def run_progressive_rebalancing(
                     with cpu_solving_placeholder.container():
                         st.progress(
                             min(1.0, period / total),
-                            text=f"⏳ Period {period + 1}/{total} · Portfolio: ${value:.3f}",
+                            text=f"⏳ Period {period + 1}/{total} · Portfolio: {value:.3f}",
                         )
                 else:
                     with cpu_solving_placeholder.container():
