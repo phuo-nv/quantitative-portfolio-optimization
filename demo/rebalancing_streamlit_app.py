@@ -1973,11 +1973,11 @@ def run_progressive_rebalancing(
     # Display empty plots as static images
     gpu_plot_container.image(
         _render_rebalancing_frame([], [], [], [], [], "— GPU"),
-        use_container_width=True,
+        width="stretch",
     )
     cpu_plot_container.image(
         _render_rebalancing_frame([], [], [], [], [], "— CPU"),
-        use_container_width=True,
+        width="stretch",
     )
 
     # Create synchronization event to ensure simultaneous start
@@ -2156,7 +2156,7 @@ def run_progressive_rebalancing(
                             )
                             gpu_heatmap_container.plotly_chart(
                                 _hfig,
-                                use_container_width=True,
+                                width="stretch",
                                 key=_next_key("gpu_hm"),
                             )
                         except Exception:
@@ -2254,7 +2254,7 @@ def run_progressive_rebalancing(
                             )
                             cpu_heatmap_container.plotly_chart(
                                 _hfig,
-                                use_container_width=True,
+                                width="stretch",
                                 key=_next_key("cpu_hm"),
                             )
                         except Exception:
@@ -2383,7 +2383,7 @@ def run_progressive_rebalancing(
                     gpu_plot_data["rebal_dates"],
                     "— GPU",
                 ),
-                use_container_width=True,
+                width="stretch",
                 key=_next_key("gpu_plot"),
             )
             gpu_plotly_rendered = True
@@ -2401,7 +2401,7 @@ def run_progressive_rebalancing(
                     gpu_plot_data["rebal_dates"],
                     "— GPU",
                 ),
-                use_container_width=True,
+                width="stretch",
             )
 
         # CPU: animate or switch to interactive Plotly when done
@@ -2415,7 +2415,7 @@ def run_progressive_rebalancing(
                     cpu_plot_data["rebal_dates"],
                     "— CPU",
                 ),
-                use_container_width=True,
+                width="stretch",
                 key=_next_key("cpu_plot"),
             )
             cpu_plotly_rendered = True
@@ -2433,7 +2433,7 @@ def run_progressive_rebalancing(
                     cpu_plot_data["rebal_dates"],
                     "— CPU",
                 ),
-                use_container_width=True,
+                width="stretch",
             )
 
         # Exit when both are done and rendered as Plotly
@@ -2834,7 +2834,7 @@ def main():
             "through the backtest in real time."
         )
         if gif_path.exists():
-            st.image(str(gif_path), use_container_width=True)
+            st.image(str(gif_path), width="stretch")
             st.caption(
                 "Using the cuOpt GPU solver (left), you can test rebalancing "
                 "strategies much faster than using a CPU solver (right) — shown at 4x speed."
@@ -2993,7 +2993,7 @@ def main():
                     yaxis_title="Price (normalized to 1)",
                     **_plot_layout,
                 )
-                st.plotly_chart(fig_price, use_container_width=True)
+                st.plotly_chart(fig_price, width="stretch")
 
                 # Returns chart
                 fig_returns = go.Figure()
@@ -3011,7 +3011,7 @@ def main():
                     yaxis_title=f"{_rt_label} Return",
                     **_plot_layout,
                 )
-                st.plotly_chart(fig_returns, use_container_width=True)
+                st.plotly_chart(fig_returns, width="stretch")
             except Exception as e:
                 st.warning(f"Could not load dataset preview: {e}")
         else:
@@ -3333,7 +3333,7 @@ def main():
                             notional=int(notional),
                             mask_names=blog_mode,
                         )
-                        st.plotly_chart(_hfig, use_container_width=True, key=f"ptf_hm_{label}_{idx}")
+                        st.plotly_chart(_hfig, width="stretch", key=f"ptf_hm_{label}_{idx}")
 
             # Detailed tables
             with st.expander("📋 Detailed Period Results", expanded=False):
