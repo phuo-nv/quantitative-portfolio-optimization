@@ -534,19 +534,10 @@ DOW30_TICKERS = [
     'VZ', 'WMT',
 ]
 
-GLOBAL_TITANS_TICKERS = [
-    'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'META', 'TSLA', 'NVDA', 'BRK-B', 'JPM', 'JNJ',
-    'V', 'UNH', 'PG', 'HD', 'MA', 'XOM', 'PFE', 'ABBV', 'KO', 'PEP',
-    'MRK', 'COST', 'TMO', 'AVGO', 'LLY', 'WMT', 'CSCO', 'MCD', 'ACN', 'ABT',
-    'TXN', 'NEE', 'DHR', 'PM', 'UPS', 'RTX', 'HON', 'ORCL', 'NFLX', 'INTC',
-    'TSM', 'NVO', 'ASML', 'SAP', 'TM', 'SHEL', 'NESN.SW', 'AZN', 'HSBC', 'RY',
-]
-
 DATASET_TICKERS = {
     "sp500": SP500_TICKERS,
     "sp100": SP100_TICKERS,
     "dow30": DOW30_TICKERS,
-    "global_titans": GLOBAL_TITANS_TICKERS,
 }
 
 
@@ -559,7 +550,11 @@ def _download_tickers(tickers, output_path, start_date="2005-01-01",
         batch_data = yf.download(batch, start=start_date, end=end_date, timeout=30)
         frames.append(batch_data['Close'])
 
-    data = pd.concat(frames, axis=1).dropna(axis=1)
+    data = pd.concat(frames, axis=1)
+    # Drop tickers with >10% missing data, forward-fill the rest
+    threshold = len(data) * 0.9
+    data = data.dropna(axis=1, thresh=int(threshold))
+    data = data.ffill().dropna()
     data.to_csv(output_path)
     print(f"Saved {len(data.columns)} tickers to {output_path}")
     return data

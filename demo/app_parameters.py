@@ -21,7 +21,7 @@ class DefaultValues:
     BLUEPRINT_NAME = "Quantitative Portfolio Optimization developer example"
 
     # Dataset Settings
-    DATASET_NAME = "sp100"  # Default dataset (if available)
+    DATASET_NAME = "sp500"  # Default dataset (if available)
     START_DATE = pd.to_datetime("2022-07-01")
     END_DATE = pd.to_datetime("2023-12-31")
     REGIME_NAME = "Selected Period"

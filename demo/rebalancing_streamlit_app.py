@@ -27,6 +27,7 @@ Author: phuo-nv
 from __future__ import annotations
 
 import copy
+import io
 import multiprocessing as mp
 import queue
 import sys
@@ -233,7 +234,7 @@ def _build_portfolio_treemap(
         idx = min(int(seg), len(_green_stops) - 2)
         marker_colors.append(_lerp_hex(_green_stops[idx], _green_stops[idx + 1], seg - idx))
         text_colors.append(_text_color_for_bg(marker_colors[-1]))
-        custom_text.append(f"${dollar:,.0f}<br>{v*100:.1f}%{tag}")
+        custom_text.append(f"${dollar:,.0f}{tag}")
         hover_texts.append(
             f"<b>{name}</b><br>Weight: {v:.4f} ({v*100:.2f}%)<br>"
             f"Value: ${dollar:,.0f}"
@@ -246,7 +247,7 @@ def _build_portfolio_treemap(
         dollar = abs(v) * notional
         name = mask[t]
         tag, delta = _change_tag(t, v)
-        labels.append(f"{name} (S)")
+        labels.append(name)
         parents.append("")
         values.append(abs(v))
         frac = i / max(1, len(short_items) - 1) if len(short_items) > 1 else 0.5
@@ -254,7 +255,7 @@ def _build_portfolio_treemap(
         idx = min(int(seg), len(_red_stops) - 2)
         marker_colors.append(_lerp_hex(_red_stops[idx], _red_stops[idx + 1], seg - idx))
         text_colors.append(_text_color_for_bg(marker_colors[-1]))
-        custom_text.append(f"-${dollar:,.0f}<br>{v*100:.1f}%{tag}")
+        custom_text.append(f"-${dollar:,.0f}{tag}")
         hover_texts.append(
             f"<b>{name} (Short)</b><br>Weight: {v:.4f} ({v*100:.2f}%)<br>"
             f"Value: -${dollar:,.0f}"
@@ -270,7 +271,7 @@ def _build_portfolio_treemap(
         values.append(abs(cash))
         marker_colors.append(_lerp_hex(_NV_YELLOW, _YELLOW_LIGHT, 0.3))
         text_colors.append(_text_color_for_bg(marker_colors[-1]))
-        custom_text.append(f"${dollar:,.0f}<br>{cash*100:.1f}%{tag}")
+        custom_text.append(f"${dollar:,.0f}{tag}")
         hover_texts.append(
             f"<b>Cash</b><br>Weight: {cash:.4f} ({cash*100:.2f}%)<br>"
             f"Value: ${dollar:,.0f}"
@@ -318,6 +319,127 @@ def _build_portfolio_treemap(
     )
 
     return fig
+
+
+def _build_rebalancing_plotly(cum_dates, cum_values, bh_dates, bh_values,
+                              rebal_dates=None, title_suffix=""):
+    """Build an interactive Plotly chart for the rebalancing backtest."""
+    import plotly.graph_objects as go
+
+    fig = go.Figure()
+
+    # NVIDIA brand secondary palette
+    _NV_ORANGE = "#ef9100"       # Orange
+    _NV_GREEN = "#76b900"        # NVIDIA Green
+    _NV_YELLOW = "#f9c500"       # Yellow
+    _NV_GREEN_LIGHT = "#bff230"  # Green Light 1
+    _NV_RED = "#e52020"          # Red
+
+    # Baseline (buy & hold)
+    if bh_dates and bh_values:
+        fig.add_trace(go.Scatter(
+            x=bh_dates, y=bh_values, mode="lines",
+            name="Buy & Hold",
+            line=dict(width=2, color=_NV_ORANGE),
+            hovertemplate="<b>Buy & Hold</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>",
+        ))
+
+    # Dynamic rebalancing
+    if cum_dates and cum_values:
+        fig.add_trace(go.Scatter(
+            x=cum_dates, y=cum_values, mode="lines",
+            name="Dynamic Rebalancing",
+            line=dict(width=2.5, color=_NV_GREEN),
+            hovertemplate="<b>Rebalancing</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>",
+        ))
+
+    # Rebalancing date markers
+    if rebal_dates and cum_dates and cum_values:
+        cum_series = pd.Series(cum_values, index=pd.to_datetime(cum_dates))
+        marker_vals = []
+        marker_dates = []
+        for d in rebal_dates:
+            dt = pd.Timestamp(d)
+            if dt in cum_series.index:
+                marker_vals.append(float(cum_series[dt]))
+                marker_dates.append(dt)
+            else:
+                idx = cum_series.index.get_indexer([dt], method="nearest")[0]
+                if idx >= 0:
+                    marker_vals.append(float(cum_series.iloc[idx]))
+                    marker_dates.append(cum_series.index[idx])
+        if marker_dates:
+            fig.add_trace(go.Scatter(
+                x=marker_dates, y=marker_vals, mode="markers",
+                name="Rebalance",
+                marker=dict(size=8, color=_NV_YELLOW, symbol="diamond",
+                            line=dict(width=1.5, color="white")),
+                hovertemplate="<b>Rebalance Triggered</b><br>Date: %{x}<br>Value: %{y:.4f}<extra></extra>",
+            ))
+
+    fig.update_layout(
+        paper_bgcolor="#000000",
+        plot_bgcolor="#000000",
+        title=dict(
+            text=f"Rebalancing Strategy {title_suffix}".strip(),
+            font=dict(size=13, color="#fafafa"),
+        ),
+        xaxis=dict(gridcolor="#222", showgrid=True, color="#aaa", title=""),
+        yaxis=dict(gridcolor="#222", showgrid=True, color="#aaa",
+                   title="Cumulative Portfolio Value"),
+        legend=dict(
+            font=dict(color="#ccc", size=10),
+            bgcolor="rgba(0,0,0,0.5)",
+            x=0.01, y=0.99,
+            xanchor="left", yanchor="top",
+        ),
+        height=380,
+        margin=dict(l=60, r=20, t=40, b=30),
+        hovermode="x unified",
+    )
+    return fig
+
+
+def _render_rebalancing_frame(cum_dates, cum_values, bh_dates, bh_values,
+                              rebal_dates=None, title_suffix=""):
+    """Render a rebalancing chart frame as PNG bytes for smooth animation."""
+    with _matplotlib_lock:
+        fig, ax = plt.subplots(figsize=(8, 4), dpi=80, facecolor="#000000")
+        ax.set_facecolor("#000000")
+
+        if bh_dates and bh_values:
+            ax.plot(pd.to_datetime(bh_dates), bh_values,
+                    linewidth=1.8, color="#ef9100", alpha=0.85, label="Buy & Hold")
+
+        if cum_dates and cum_values:
+            ax.plot(pd.to_datetime(cum_dates), cum_values,
+                    linewidth=2.2, color="#76b900", alpha=0.95, label="Dynamic Rebalancing")
+
+        if rebal_dates and cum_dates and cum_values:
+            cum_s = pd.Series(cum_values, index=pd.to_datetime(cum_dates))
+            for d in rebal_dates:
+                dt = pd.Timestamp(d)
+                if dt in cum_s.index:
+                    ax.plot(dt, float(cum_s[dt]), "D", color="#f9c500",
+                            markersize=5, markeredgecolor="white", markeredgewidth=0.8, zorder=5)
+
+        ax.set_title(f"Rebalancing Strategy {title_suffix}".strip(),
+                     fontsize=10, fontweight="bold", color="#fafafa", pad=4)
+        ax.set_ylabel("Cumulative Value", fontsize=8, color="#aaa")
+        ax.tick_params(colors="#666", labelsize=7)
+        ax.grid(True, alpha=0.15, color="#333")
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        if cum_dates or bh_dates:
+            ax.legend(fontsize=7, loc="upper left", frameon=False,
+                      labelcolor="#ccc")
+        fig.tight_layout(pad=0.8)
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", facecolor="#000000", bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
+        return buf.getvalue()
 
 
 def get_available_datasets():
@@ -542,7 +664,8 @@ def create_rebalancing_progressive(
             {
                 "solver": solver_name,
                 "status": "plot_ready",
-                "figure": fig,
+                "bh_dates": [str(d) for d in bh_series.index],
+                "bh_values": bh_series.values.tolist(),
                 "message": f"{solver_name}: Buy & hold baseline plotted",
             }
         )
@@ -918,7 +1041,7 @@ def create_rebalancing_progressive(
                 }
             )
 
-            # Plot update (controlled frequency)
+            # Plot update (controlled frequency) — send raw data for Plotly rendering
             if (
                 period_counter % max(1, PerformanceParams.PLOT_UPDATE_FREQUENCY) == 0
             ) or (period_counter == total_periods):
@@ -926,7 +1049,11 @@ def create_rebalancing_progressive(
                     {
                         "solver": solver_name,
                         "status": "period_plot_update",
-                        "figure": fig,
+                        "cum_dates": [str(d) for d in cumulative_dates],
+                        "cum_values": cumulative_values.tolist(),
+                        "bh_dates": [str(d) for d in bh_series.index],
+                        "bh_values": bh_series.values.tolist(),
+                        "rebal_dates": [str(d) for d in rebal_dates],
                         "period": period_counter,
                         "total_periods": total_periods,
                     }
@@ -989,14 +1116,18 @@ def create_rebalancing_progressive(
         # Calculate final total elapsed time
         final_total_time = time.time() - start_time_overall
 
-        # Send completion with final plot simultaneously to avoid lag
+        # Send completion with final data
         progress_queue.put(
             {
                 "solver": solver_name,
                 "status": "completed",
                 "total_elapsed_time": final_total_time,
                 "total_solve_time": total_solve_time,
-                "figure": fig,  # Include final figure with completion message
+                "cum_dates": [str(d) for d in cumulative_dates],
+                "cum_values": cumulative_values.tolist() if hasattr(cumulative_values, 'tolist') else list(cumulative_values),
+                "bh_dates": [str(d) for d in bh_series.index],
+                "bh_values": bh_series.values.tolist(),
+                "rebal_dates": [str(d) for d in rebal_dates],
                 "message": f"{solver_name}: Completed {period_counter} periods in {final_total_time:.2f}s",
             }
         )
@@ -1388,13 +1519,9 @@ def cpu_bridge_thread(mp_q, st_progress_q, st_result_q, strategy_display_name, s
         elif status == "ready":
             bh_index = msg.get("bh_index", [])
             bh_values = msg.get("bh_values", [])
-            fig = _build_cpu_figure([], [], bh_index, bh_values, [],
-                                    strategy_display_name)
-            with _matplotlib_lock:
-                _img = _fig_to_png_bytes(fig)
-                plt.close(fig)
             st_progress_q.put({"solver": solver_name, "status": "plot_ready",
-                                "figure": _img, "message": msg.get("message", "")})
+                                "bh_dates": bh_index, "bh_values": bh_values,
+                                "message": msg.get("message", "")})
 
         elif status == "reusing_baseline":
             st_progress_q.put({"solver": solver_name, "status": "reusing_baseline",
@@ -1416,33 +1543,26 @@ def cpu_bridge_thread(mp_q, st_progress_q, st_result_q, strategy_display_name, s
                 "portfolio_weights": msg.get("portfolio_weights", {}),
                 "message": msg.get("message", ""),
             })
-            fig = _build_cpu_figure(
-                msg["cumulative_values"], msg["cumulative_dates"],
-                bh_index, bh_values, msg["rebal_dates"],
-                strategy_display_name)
-            with _matplotlib_lock:
-                _img = _fig_to_png_bytes(fig)
-                plt.close(fig)
             st_progress_q.put({
                 "solver": solver_name, "status": "period_plot_update",
-                "figure": _img,
+                "cum_dates": msg["cumulative_dates"],
+                "cum_values": msg["cumulative_values"],
+                "bh_dates": bh_index,
+                "bh_values": bh_values,
+                "rebal_dates": msg["rebal_dates"],
                 "period": msg["period"], "total_periods": msg["total_periods"],
             })
 
         elif status == "completed":
-            fig = _build_cpu_figure(
-                msg["cumulative_values"], msg["cumulative_dates"],
-                msg.get("bh_index", bh_index), msg.get("bh_values", bh_values),
-                msg["rebal_dates"], strategy_display_name)
-            with _matplotlib_lock:
-                _img = _fig_to_png_bytes(fig)
-                plt.close(fig)
-
             st_progress_q.put({
                 "solver": solver_name, "status": "completed",
                 "total_elapsed_time": msg.get("total_elapsed_time", 0),
                 "total_solve_time": msg.get("total_solve_time", 0),
-                "figure": _img,
+                "cum_dates": msg["cumulative_dates"],
+                "cum_values": msg["cumulative_values"],
+                "bh_dates": msg.get("bh_index", bh_index),
+                "bh_values": msg.get("bh_values", bh_values),
+                "rebal_dates": msg["rebal_dates"],
                 "message": msg.get("message", ""),
             })
 
@@ -1524,66 +1644,21 @@ def run_progressive_rebalancing(
     cpu_result_q: queue.Queue = queue.Queue()
 
     # Dynamic axis limits will be calculated during plotting based on actual data
+    _render_counter = [0]
 
-    # Create and display empty plots immediately for simultaneous appearance
-    # Create identical empty plots for both GPU and CPU with strategy name
-    def create_empty_plot():
-        with _matplotlib_lock:
-            plt.style.use(MatplotlibConfig.STYLE)
-            sns.set_context(
-                MatplotlibConfig.CONTEXT, font_scale=MatplotlibConfig.FONT_SCALE
-            )
-            colors = get_color_scheme()
+    def _next_key(prefix):
+        _render_counter[0] += 1
+        return f"{prefix}_{_render_counter[0]}"
 
-            # Create figure with consistent sizing and layout
-            fig, ax = plt.subplots(
-                figsize=PlotStyling.REBALANCING_FIGURE_SIZE,
-                dpi=PlotStyling.FIGURE_DPI,
-                facecolor=colors["background"],
-                tight_layout=True,
-            )
-            ax.set_facecolor(colors["background"])
-
-            ax.set_xlabel(
-                "Date",
-                fontsize=PlotStyling.XLABEL_FONTSIZE,
-                fontweight=PlotStyling.FONT_WEIGHT,
-            )
-            ax.set_ylabel(
-                "Cumulative Portfolio Value",
-                fontsize=PlotStyling.YLABEL_FONTSIZE,
-                fontweight=PlotStyling.FONT_WEIGHT,
-            )
-            ax.set_title(
-                f"Rebalancing Strategy - {strategy_display_name}",
-                fontsize=PlotStyling.TITLE_FONTSIZE,
-                fontweight=PlotStyling.FONT_WEIGHT,
-                pad=PlotStyling.TITLE_PAD,
-            )
-
-            ax.grid(True, alpha=PlotStyling.GRID_ALPHA, color=colors["grid"])
-            ax.spines["top"].set_visible(False)
-            ax.spines["right"].set_visible(False)
-            ax.spines["left"].set_color(PlotStyling.SPINE_COLOR)
-            ax.spines["bottom"].set_color(PlotStyling.SPINE_COLOR)
-
-            # Ensure consistent margins and layout
-            fig.subplots_adjust(left=0.1, right=0.95, top=0.9, bottom=0.1)
-
-            return fig
-
-    # Create and display both empty plots simultaneously
-    gpu_empty_fig = create_empty_plot()
-    cpu_empty_fig = create_empty_plot()
-
-    with _matplotlib_lock:
-        gpu_empty_img = _fig_to_png_bytes(gpu_empty_fig)
-        cpu_empty_img = _fig_to_png_bytes(cpu_empty_fig)
-        plt.close(gpu_empty_fig)
-        plt.close(cpu_empty_fig)
-
-    gpu_plot_container.image(gpu_empty_img, width="stretch")
-    cpu_plot_container.image(cpu_empty_img, width="stretch")
+    # Display empty plots as static images
+    gpu_plot_container.image(
+        _render_rebalancing_frame([], [], [], [], [], "— GPU"),
+        use_container_width=True,
+    )
+    cpu_plot_container.image(
+        _render_rebalancing_frame([], [], [], [], [], "— CPU"),
+        use_container_width=True,
+    )
 
     # Create synchronization event to ensure simultaneous start
     start_event = threading.Event()
@@ -1694,14 +1769,23 @@ def run_progressive_rebalancing(
     gpu_reopt_snapshot = {}
     cpu_reopt_snapshot = {}
 
+    # Smooth animation buffers: store latest full data, reveal progressively
+    gpu_plot_data = {"cum_dates": [], "cum_values": [], "bh_dates": [], "bh_values": [], "rebal_dates": []}
+    cpu_plot_data = {"cum_dates": [], "cum_values": [], "bh_dates": [], "bh_values": [], "rebal_dates": []}
+    gpu_display_idx = 0
+    cpu_display_idx = 0
+    gpu_plotly_rendered = False
+    cpu_plotly_rendered = False
+    _DAYS_PER_FRAME = 3
+
     # Show initial waiting bars immediately
     with gpu_solving_placeholder.container():
         st.progress(0.0, text="⏳ Initializing GPU...")
     with cpu_solving_placeholder.container():
         st.progress(0.0, text="⏳ Initializing CPU...")
 
-    # Main loop: drain queues frequently
-    while not (gpu_done and cpu_done):
+    # Main loop: drain queues frequently, continue until animation finishes
+    while True:
         gpu_had_update = False
         cpu_had_update = False
 
@@ -1732,23 +1816,21 @@ def run_progressive_rebalancing(
                                 mask_names=blog_mode, prev_weights=gpu_prev_weights,
                             )
                             gpu_heatmap_container.plotly_chart(
-                                _hfig, width="stretch",
+                                _hfig, use_container_width=True, key=_next_key("gpu_hm"),
                             )
                         except Exception:
                             pass
-                elif status == "period_plot_update" and not gpu_processed_plot:
-                    fig = upd.get("figure")
-                    if fig is not None:
-                        with _matplotlib_lock:
-                            _img = _fig_to_png_bytes(fig)
-                        gpu_plot_container.image(_img, width="stretch")
-                        gpu_processed_plot = True
+                elif status == "period_plot_update":
+                    gpu_plot_data = {
+                        "cum_dates": upd.get("cum_dates", []),
+                        "cum_values": upd.get("cum_values", []),
+                        "bh_dates": upd.get("bh_dates", []),
+                        "bh_values": upd.get("bh_values", []),
+                        "rebal_dates": upd.get("rebal_dates", []),
+                    }
                 elif status == "plot_ready":
-                    fig = upd.get("figure")
-                    if fig is not None:
-                        with _matplotlib_lock:
-                            _img = _fig_to_png_bytes(fig)
-                        gpu_plot_container.image(_img, width="stretch")
+                    gpu_plot_data["bh_dates"] = upd.get("bh_dates", [])
+                    gpu_plot_data["bh_values"] = upd.get("bh_values", [])
                     with gpu_progress_placeholder.container():
                         st.success(upd.get("message", ""))
                 elif status == "ready":
@@ -1768,11 +1850,14 @@ def run_progressive_rebalancing(
                     with gpu_progress_placeholder.container():
                         st.info(upd.get("message", ""))
                 elif status == "completed":
-                    fig = upd.get("figure")
-                    if fig is not None:
-                        with _matplotlib_lock:
-                            _img = _fig_to_png_bytes(fig)
-                        gpu_plot_container.image(_img, width="stretch")
+                    gpu_plot_data = {
+                        "cum_dates": upd.get("cum_dates", []),
+                        "cum_values": upd.get("cum_values", []),
+                        "bh_dates": upd.get("bh_dates", []),
+                        "bh_values": upd.get("bh_values", []),
+                        "rebal_dates": upd.get("rebal_dates", []),
+                    }
+                    gpu_display_idx = len(gpu_plot_data["cum_dates"])
                     gpu_final_time = upd.get("total_elapsed_time", time.time() - loop_start_time)
                     gpu_final_solve = upd.get("total_solve_time", 0.0)
                     with gpu_progress_placeholder.container():
@@ -1818,19 +1903,21 @@ def run_progressive_rebalancing(
                                 mask_names=blog_mode, prev_weights=cpu_prev_weights,
                             )
                             cpu_heatmap_container.plotly_chart(
-                                _hfig, width="stretch",
+                                _hfig, use_container_width=True, key=_next_key("cpu_hm"),
                             )
                         except Exception:
                             pass
-                elif status == "period_plot_update" and not cpu_processed_plot:
-                    _img = upd.get("figure")
-                    if _img is not None:
-                        cpu_plot_container.image(_img, width="stretch")
-                        cpu_processed_plot = True
+                elif status == "period_plot_update":
+                    cpu_plot_data = {
+                        "cum_dates": upd.get("cum_dates", []),
+                        "cum_values": upd.get("cum_values", []),
+                        "bh_dates": upd.get("bh_dates", []),
+                        "bh_values": upd.get("bh_values", []),
+                        "rebal_dates": upd.get("rebal_dates", []),
+                    }
                 elif status == "plot_ready":
-                    _img = upd.get("figure")
-                    if _img is not None:
-                        cpu_plot_container.image(_img, width="stretch")
+                    cpu_plot_data["bh_dates"] = upd.get("bh_dates", [])
+                    cpu_plot_data["bh_values"] = upd.get("bh_values", [])
                     with cpu_progress_placeholder.container():
                         st.success(upd.get("message", ""))
                 elif status == "ready":
@@ -1850,9 +1937,14 @@ def run_progressive_rebalancing(
                     with cpu_progress_placeholder.container():
                         st.info(upd.get("message", ""))
                 elif status == "completed":
-                    _img = upd.get("figure")
-                    if _img is not None:
-                        cpu_plot_container.image(_img, width="stretch")
+                    cpu_plot_data = {
+                        "cum_dates": upd.get("cum_dates", []),
+                        "cum_values": upd.get("cum_values", []),
+                        "bh_dates": upd.get("bh_dates", []),
+                        "bh_values": upd.get("bh_values", []),
+                        "rebal_dates": upd.get("rebal_dates", []),
+                    }
+                    cpu_display_idx = len(cpu_plot_data["cum_dates"])
                     cpu_final_time = upd.get("total_elapsed_time", time.time() - loop_start_time)
                     cpu_final_solve = upd.get("total_solve_time", 0.0)
                     with cpu_progress_placeholder.container():
@@ -1917,6 +2009,64 @@ def run_progressive_rebalancing(
         if not header_cleared and time.time() >= header_clear_time:
             header_placeholder.empty()
             header_cleared = True
+
+        # Smooth animation: render as static image, both lines progress in sync
+        _gpu_total = len(gpu_plot_data["cum_dates"])
+        _cpu_total = len(cpu_plot_data["cum_dates"])
+        _gpu_bh_total = len(gpu_plot_data["bh_dates"])
+        _cpu_bh_total = len(cpu_plot_data["bh_dates"])
+        _gpu_anim_done = gpu_display_idx >= _gpu_total and _gpu_total > 0
+        _cpu_anim_done = cpu_display_idx >= _cpu_total and _cpu_total > 0
+
+        # GPU: animate or switch to interactive Plotly when done
+        if gpu_done and _gpu_anim_done and not gpu_plotly_rendered:
+            gpu_plot_container.plotly_chart(
+                _build_rebalancing_plotly(
+                    gpu_plot_data["cum_dates"], gpu_plot_data["cum_values"],
+                    gpu_plot_data["bh_dates"], gpu_plot_data["bh_values"],
+                    gpu_plot_data["rebal_dates"], "— GPU",
+                ), use_container_width=True, key=_next_key("gpu_plot"),
+            )
+            gpu_plotly_rendered = True
+        elif not _gpu_anim_done and (gpu_display_idx < _gpu_total or (gpu_display_idx == 0 and _gpu_bh_total > 0)):
+            gpu_display_idx = min(gpu_display_idx + _DAYS_PER_FRAME, _gpu_total)
+            _bh_idx = min(gpu_display_idx, _gpu_bh_total)
+            gpu_plot_container.image(
+                _render_rebalancing_frame(
+                    gpu_plot_data["cum_dates"][:gpu_display_idx],
+                    gpu_plot_data["cum_values"][:gpu_display_idx],
+                    gpu_plot_data["bh_dates"][:_bh_idx],
+                    gpu_plot_data["bh_values"][:_bh_idx],
+                    gpu_plot_data["rebal_dates"], "— GPU",
+                ), use_container_width=True,
+            )
+
+        # CPU: animate or switch to interactive Plotly when done
+        if cpu_done and _cpu_anim_done and not cpu_plotly_rendered:
+            cpu_plot_container.plotly_chart(
+                _build_rebalancing_plotly(
+                    cpu_plot_data["cum_dates"], cpu_plot_data["cum_values"],
+                    cpu_plot_data["bh_dates"], cpu_plot_data["bh_values"],
+                    cpu_plot_data["rebal_dates"], "— CPU",
+                ), use_container_width=True, key=_next_key("cpu_plot"),
+            )
+            cpu_plotly_rendered = True
+        elif not _cpu_anim_done and (cpu_display_idx < _cpu_total or (cpu_display_idx == 0 and _cpu_bh_total > 0)):
+            cpu_display_idx = min(cpu_display_idx + _DAYS_PER_FRAME, _cpu_total)
+            _bh_idx = min(cpu_display_idx, _cpu_bh_total)
+            cpu_plot_container.image(
+                _render_rebalancing_frame(
+                    cpu_plot_data["cum_dates"][:cpu_display_idx],
+                    cpu_plot_data["cum_values"][:cpu_display_idx],
+                    cpu_plot_data["bh_dates"][:_bh_idx],
+                    cpu_plot_data["bh_values"][:_bh_idx],
+                    cpu_plot_data["rebal_dates"], "— CPU",
+                ), use_container_width=True,
+            )
+
+        # Exit when both are done and rendered as Plotly
+        if gpu_plotly_rendered and cpu_plotly_rendered:
+            break
 
         time.sleep(PerformanceParams.MAIN_LOOP_DELAY)
 
@@ -2306,37 +2456,107 @@ def main():
         dataset_path_preview = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
         if dataset_path_preview.exists():
             try:
-                df_preview = pd.read_csv(dataset_path_preview, index_col=0, parse_dates=True)
-                mask = (df_preview.index >= pd.Timestamp(start_date)) & (df_preview.index <= pd.Timestamp(end_date))
-                df_filtered = df_preview.loc[mask]
+                import plotly.graph_objects as go
+
+                df_raw = pd.read_csv(dataset_path_preview, index_col=0, parse_dates=True)
+                _mask_ts = (df_raw.index >= pd.Timestamp(start_date)) & (df_raw.index <= pd.Timestamp(end_date))
+                df_filtered = df_raw.loc[_mask_ts]
                 if df_filtered.empty:
-                    df_filtered = df_preview
+                    df_filtered = df_raw
+
+                _sd = start_date.strftime("%Y-%m-%d") if hasattr(start_date, "strftime") else str(start_date)
+                _ed = end_date.strftime("%Y-%m-%d") if hasattr(end_date, "strftime") else str(end_date)
+                regime_preview = {"name": "preview", "range": (_sd, _ed)}
+                rcs_preview = ReturnsComputeSettings(return_type=return_type, freq=1)
+                returns_dict_preview = utils.calculate_returns(
+                    str(dataset_path_preview), regime_preview, rcs_preview
+                )
+                returns_df = returns_dict_preview["returns"]
+
+                _ds_label = _dataset_labels.get(dataset_name, "Dataset") if blog_mode else dataset_name
+                _rt_label = return_type.capitalize()
 
                 col_s1, col_s2, col_s3 = st.columns(3)
                 with col_s1:
-                    st.metric("Assets", len(df_preview.columns))
+                    st.metric("Assets", len(df_filtered.columns))
                 with col_s2:
                     st.metric("From", df_filtered.index.min().strftime("%Y-%m-%d"))
                 with col_s3:
                     st.metric("To", df_filtered.index.max().strftime("%Y-%m-%d"))
 
-                fig_preview, ax_preview = plt.subplots(figsize=(14, 5), dpi=150)
-                normalised = df_filtered.div(df_filtered.iloc[0])
-                for col in normalised.columns:
-                    ax_preview.plot(normalised.index, normalised[col], linewidth=0.8, alpha=0.7)
-                _ds_label = _dataset_labels.get(dataset_name, "Dataset") if blog_mode else dataset_name
-                ax_preview.set_title(
-                    f"{_ds_label} — Normalised Closing Prices",
-                    fontsize=14, fontweight="bold",
+                _plot_layout = dict(
+                    paper_bgcolor="#000000",
+                    plot_bgcolor="#000000",
+                    xaxis=dict(gridcolor="#222", showgrid=True, title="", color="#aaa"),
+                    yaxis=dict(gridcolor="#222", showgrid=True, color="#aaa"),
+                    height=400,
+                    margin=dict(l=60, r=20, t=50, b=40),
+                    hovermode="x unified",
                 )
-                ax_preview.set_ylabel("Price (normalised to 1)")
-                ax_preview.set_xlabel("")
-                ax_preview.grid(True, alpha=0.25)
-                ax_preview.spines["top"].set_visible(False)
-                ax_preview.spines["right"].set_visible(False)
-                fig_preview.tight_layout()
-                st.pyplot(fig_preview)
-                plt.close(fig_preview)
+
+                def _add_summary_bands(fig, df, value_fmt=".3f", value_label="Value"):
+                    """Add high/low/mean summary traces with per-date stats on hover."""
+                    _high = df.max(axis=1)
+                    _low = df.min(axis=1)
+                    _mean = df.mean(axis=1)
+
+                    for col in df.columns:
+                        fig.add_trace(go.Scatter(
+                            x=df.index, y=df[col],
+                            mode="lines", name=col if not blog_mode else "",
+                            line=dict(width=1.0), opacity=0.4,
+                            showlegend=False, hoverinfo="skip",
+                        ))
+
+                    fig.add_trace(go.Scatter(
+                        x=_high.index, y=_high.values, mode="lines",
+                        name="High", line=dict(width=0, color="rgba(118,185,0,0)"),
+                        showlegend=False, hoverinfo="skip",
+                    ))
+                    fig.add_trace(go.Scatter(
+                        x=_low.index, y=_low.values, mode="lines",
+                        name="Low", line=dict(width=0, color="rgba(118,185,0,0)"),
+                        fill="tonexty", fillcolor="rgba(118,185,0,0.08)",
+                        showlegend=False, hoverinfo="skip",
+                    ))
+                    # Invisible trace for hover stats only
+                    fig.add_trace(go.Scatter(
+                        x=_mean.index, y=_mean.values, mode="lines",
+                        name="Summary", line=dict(width=0, color="rgba(0,0,0,0)"),
+                        showlegend=False,
+                        customdata=np.stack([_high.values, _low.values], axis=-1),
+                        hovertemplate=(
+                            f"<b>Cross-Section</b><br>"
+                            f"High: %{{customdata[0]:{value_fmt}}}<br>"
+                            f"Mean: %{{y:{value_fmt}}}<br>"
+                            f"Low: %{{customdata[1]:{value_fmt}}}"
+                            f"<extra></extra>"
+                        ),
+                    ))
+
+                # Normalized price chart
+                normalised = df_filtered.div(df_filtered.iloc[0])
+                fig_price = go.Figure()
+                _add_summary_bands(fig_price, normalised, value_fmt=".3f", value_label="Price")
+                fig_price.update_layout(
+                    title=dict(text=f"{_ds_label} — Normalized Closing Prices",
+                               font=dict(size=16, color="#fafafa")),
+                    yaxis_title="Price (normalized to 1)",
+                    **_plot_layout,
+                )
+                st.plotly_chart(fig_price, use_container_width=True)
+
+                # Returns chart
+                fig_returns = go.Figure()
+                _add_summary_bands(fig_returns, returns_df, value_fmt=".4f", value_label="Return")
+                fig_returns.add_hline(y=0, line_dash="dash", line_color="#555", line_width=0.8)
+                fig_returns.update_layout(
+                    title=dict(text=f"{_ds_label} — {_rt_label} Returns",
+                               font=dict(size=16, color="#fafafa")),
+                    yaxis_title=f"{_rt_label} Return",
+                    **_plot_layout,
+                )
+                st.plotly_chart(fig_returns, use_container_width=True)
             except Exception as e:
                 st.warning(f"Could not load dataset preview: {e}")
         else:
@@ -2448,7 +2668,7 @@ def main():
 
         col_gpu, col_cpu = st.columns([1, 1], gap="medium")
         with col_gpu:
-            st.markdown("### 🚀 GPU (cuOpt) Results")
+            st.markdown("### 🚀 GPU Results")
             gpu_solving_placeholder = st.empty()
             gpu_plot_container = st.empty()
             gpu_heatmap_container = st.empty()
