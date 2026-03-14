@@ -2520,11 +2520,29 @@ def main():
             st.session_state.prev_dataset = dataset_name
             st.session_state.switch_to_dataset_tab = True
 
+        # Load dataset date bounds
+        _ds_path = workspace_root / "data" / "stock_data" / f"{dataset_name}.csv"
+        _ds_min_date = None
+        _ds_max_date = None
+        if _ds_path.exists():
+            try:
+                _ds_idx = pd.read_csv(_ds_path, index_col=0, parse_dates=True, usecols=[0]).index
+                _ds_min_date = _ds_idx.min().date()
+                _ds_max_date = _ds_idx.max().date()
+            except Exception:
+                pass
+
         col1, col2 = st.columns(2)
         with col1:
-            start_date = st.date_input("Start Date", value=DefaultValues.START_DATE)
+            start_date = st.date_input(
+                "Start Date", value=DefaultValues.START_DATE,
+                min_value=_ds_min_date, max_value=_ds_max_date,
+            )
         with col2:
-            end_date = st.date_input("End Date", value=DefaultValues.END_DATE)
+            end_date = st.date_input(
+                "End Date", value=DefaultValues.END_DATE,
+                min_value=_ds_min_date, max_value=_ds_max_date,
+            )
 
         # Portfolio Constraints (user-friendly names with technical help)
         st.subheader("💼 Portfolio Allocation")
