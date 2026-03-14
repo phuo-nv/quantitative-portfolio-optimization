@@ -437,6 +437,64 @@ def _build_rebalancing_plotly(
     return fig
 
 
+def _render_treemap_png(weights_dict, title="", notional=100_000_000,
+                        mask_names=True, cutoff=1e-3):
+    """Render a portfolio treemap as PNG bytes using squarify + matplotlib."""
+    import squarify
+
+    positions = {k: v for k, v in weights_dict.items() if k != "cash"}
+    cash = weights_dict.get("cash", 0.0)
+    tickers_sorted = sorted(positions.keys())
+    mask = {t: f"Asset {i+1}" for i, t in enumerate(tickers_sorted)} if mask_names else {t: t for t in tickers_sorted}
+
+    labels, sizes, colors = [], [], []
+    _green = (0.46, 0.72, 0.0)
+    _red = (0.90, 0.13, 0.13)
+    _gold = (0.98, 0.77, 0.0)
+
+    long_items = sorted([(t, v) for t, v in positions.items() if v > cutoff], key=lambda x: -x[1])
+    short_items = sorted([(t, v) for t, v in positions.items() if v < -cutoff], key=lambda x: x[1])
+
+    for i, (t, v) in enumerate(long_items):
+        val = abs(v) * notional
+        labels.append(f"{mask[t]}\n${val:,.0f}")
+        sizes.append(abs(v))
+        f = i / max(1, len(long_items) - 1) if len(long_items) > 1 else 0
+        colors.append((_green[0] * (1 - 0.4 * f), _green[1] * (1 - 0.3 * f), _green[2], 0.9))
+
+    for i, (t, v) in enumerate(short_items):
+        val = abs(v) * notional
+        labels.append(f"{mask[t]}\n-${val:,.0f}")
+        sizes.append(abs(v))
+        f = i / max(1, len(short_items) - 1) if len(short_items) > 1 else 0
+        colors.append((_red[0], _red[1] * (1 - 0.4 * f), _red[2] * (1 - 0.4 * f), 0.9))
+
+    if abs(cash) > cutoff:
+        val = abs(cash) * notional
+        labels.append(f"Cash\n${val:,.0f}")
+        sizes.append(abs(cash))
+        colors.append(_gold + (0.9,))
+
+    with _matplotlib_lock:
+        fig, ax = plt.subplots(figsize=(10, 5), dpi=80, facecolor="#000000")
+        ax.set_facecolor("#000000")
+        if sizes:
+            squarify.plot(
+                sizes=sizes, label=labels, color=colors, alpha=0.9, ax=ax,
+                text_kwargs={"fontsize": 8, "color": "white", "fontweight": "bold"},
+                bar_kwargs={"linewidth": 2, "edgecolor": "#000000"},
+            )
+        if title:
+            ax.set_title(title, fontsize=10, fontweight="bold", color="#fafafa", pad=4)
+        ax.axis("off")
+        fig.tight_layout(pad=0.5)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", facecolor="#000000", bbox_inches="tight")
+        plt.close(fig)
+        buf.seek(0)
+        return buf.getvalue()
+
+
 def _render_rebalancing_frame(
     cum_dates, cum_values, bh_dates, bh_values, rebal_dates=None, title_suffix=""
 ):
@@ -3303,13 +3361,12 @@ def main():
                         key=f"ptf_date_{label}",
                     )
                     idx = date_labels.index(selected)
-                    _hfig = _build_portfolio_treemap(
+                    _png = _render_treemap_png(
                         snapshots[date_keys[idx]],
-                        f"— {selected}",
+                        title=f"Portfolio — {selected}",
                         notional=_disp_notional,
                         mask_names=_disp_blog_mode,
                     )
-                    _png = _hfig.to_image(format="png", width=800, height=400)
                     st.image(_png, width="stretch")
 
         with st.expander("📋 Detailed Period Results", expanded=False):
