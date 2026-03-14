@@ -36,7 +36,7 @@ class DefaultValues:
     NUM_SCEN = 10000  # Number of scenarios
     L_TAR = 1.6  # Leverage target
     FIT_TYPE = "kde"  # "kde" or "empirical"
-    RISK_AVERSION = 0.2  # Default risk aversion for rebalancing
+    RISK_AVERSION = 1.2  # Default risk aversion for rebalancing
 
     # Efficient Frontier Settings
     RA_NUM = 20  # Number of portfolios

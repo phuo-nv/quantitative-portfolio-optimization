@@ -3211,135 +3211,91 @@ def main():
                 notional=int(notional),
             )
 
-            # Summaries
-            st.markdown(
-                '<div class="section-header">📊 Summary</div>', unsafe_allow_html=True
+            # Cache results in session state so they persist across reruns
+            st.session_state["last_results"] = results
+            st.session_state["last_notional"] = int(notional)
+            st.session_state["last_blog_mode"] = blog_mode
+
+    # Display results from session state (persists across selectbox reruns)
+    if "last_results" in st.session_state:
+      with tab_demo:
+        results = st.session_state["last_results"]
+        _disp_notional = st.session_state.get("last_notional", 100_000_000)
+        _disp_blog_mode = st.session_state.get("last_blog_mode", True)
+
+        # Summaries
+        st.markdown(
+            '<div class="section-header">📊 Summary</div>', unsafe_allow_html=True
+        )
+        g = results.get("GPU", {})
+        c = results.get("CPU", {})
+
+        col1, col2, col3 = st.columns([1, 1, 1])
+
+        with col1:
+            if g.get("success") and c.get("success"):
+                st.metric("Number of Rebalances", g.get("rebal_count", 0))
+                gt_solve = max(1e-9, g.get("total_solve_time", 0.0))
+                ct_solve = max(1e-9, c.get("total_solve_time", 0.0))
+                solve_speedup = ct_solve / gt_solve
+                st.metric("⚡ Solver Speedup", f"{solve_speedup:.1f}x faster")
+            else:
+                st.error("Speedup calculation failed")
+
+        with col2:
+            if g.get("success"):
+                st.metric("⚡ GPU Solve Time", f"{g.get('total_solve_time', 0.0):.3f}s")
+                st.metric("🔬 GPU KDE Time", f"{g.get('total_kde_time', 0.0):.3f}s")
+            else:
+                st.error("GPU failed")
+
+        with col3:
+            if c.get("success"):
+                st.metric("⚡ CPU Solve Time", f"{c.get('total_solve_time', 0.0):.3f}s")
+                st.metric("🔬 CPU KDE Time", f"{c.get('total_kde_time', 0.0):.3f}s")
+            else:
+                st.error("CPU failed")
+
+        def _render_period_table(label, result_dict):
+            """Render period results table with heatmap portfolio viewer."""
+            if not (
+                result_dict.get("success")
+                and isinstance(result_dict.get("results_df"), pd.DataFrame)
+            ):
+                return
+            st.markdown(f"**{label}**")
+            df = (
+                result_dict["results_df"]
+                .reset_index()
+                .rename(columns={"index": "date"})
             )
-            g = results.get("GPU", {})
-            c = results.get("CPU", {})
+            df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
+            st.dataframe(df, hide_index=True)
 
-            col1, col2, col3 = st.columns([1, 1, 1])
-
-            with col1:
-                if g.get("success") and c.get("success"):
-                    st.metric("Number of Rebalances", g.get("rebal_count", 0))
-                    gt_solve = max(1e-9, g.get("total_solve_time", 0.0))
-                    ct_solve = max(1e-9, c.get("total_solve_time", 0.0))
-                    solve_speedup = ct_solve / gt_solve
-                    st.metric("⚡ Solver Speedup", f"{solve_speedup:.1f}x faster")
-                else:
-                    st.error("Speedup calculation failed")
-
-            with col2:
-                if g.get("success"):
-                    st.metric(
-                        "⚡ GPU Solve Time", f"{g.get('total_solve_time', 0.0):.3f}s"
+            snapshots = result_dict.get("portfolio_snapshots", {})
+            if snapshots:
+                with st.expander(f"📂 {label} — Portfolio Heatmap"):
+                    date_keys = list(snapshots.keys())
+                    date_labels = [
+                        str(d).split("T")[0].split(" ")[0] for d in date_keys
+                    ]
+                    selected = st.selectbox(
+                        "Select rebalancing period",
+                        date_labels,
+                        key=f"ptf_date_{label}",
                     )
-                    st.metric("🔬 GPU KDE Time", f"{g.get('total_kde_time', 0.0):.3f}s")
-                else:
-                    st.error("GPU failed")
-
-            with col3:
-                if c.get("success"):
-                    st.metric(
-                        "⚡ CPU Solve Time", f"{c.get('total_solve_time', 0.0):.3f}s"
+                    idx = date_labels.index(selected)
+                    _hfig = _build_portfolio_treemap(
+                        snapshots[date_keys[idx]],
+                        f"— {selected}",
+                        notional=_disp_notional,
+                        mask_names=_disp_blog_mode,
                     )
-                    st.metric("🔬 CPU KDE Time", f"{c.get('total_kde_time', 0.0):.3f}s")
-                else:
-                    st.error("CPU failed")
+                    st.plotly_chart(_hfig, width="stretch", key=f"ptf_hm_{label}_{idx}")
 
-            def _format_portfolio_snapshot(weights_dict, cutoff=1e-3, mask_names=True):
-                """Format a single snapshot in print_clean style, optionally masking tickers."""
-                cash = weights_dict.get("cash", 0.0)
-                positions = {k: v for k, v in weights_dict.items() if k != "cash"}
-                tickers_sorted = sorted(positions.keys())
-                if mask_names:
-                    mask = {t: f"Asset {i + 1}" for i, t in enumerate(tickers_sorted)}
-                else:
-                    mask = {t: t for t in tickers_sorted}
-
-                long = {mask[t]: v for t, v in positions.items() if v > cutoff}
-                short = {mask[t]: v for t, v in positions.items() if v < -cutoff}
-
-                lines = []
-                if long:
-                    lines.append(f"**LONG POSITIONS** ({len(long)} assets)")
-                    lines.append("| Asset | Weight | % |")
-                    lines.append("|-------|-------:|---:|")
-                    total_long = 0.0
-                    for name, w in sorted(long.items(), key=lambda x: -x[1]):
-                        lines.append(f"| {name} | {w:.4f} | {w * 100:.2f}% |")
-                        total_long += w
-                    lines.append(
-                        f"| **Total Long** | **{total_long:.4f}** | **{total_long * 100:.2f}%** |"
-                    )
-
-                if short:
-                    lines.append(f"\n**SHORT POSITIONS** ({len(short)} assets)")
-                    lines.append("| Asset | Weight | % |")
-                    lines.append("|-------|-------:|---:|")
-                    total_short = 0.0
-                    for name, w in sorted(short.items(), key=lambda x: x[1]):
-                        lines.append(f"| {name} | {w:.4f} | {w * 100:.2f}% |")
-                        total_short += w
-                    lines.append(
-                        f"| **Total Short** | **{total_short:.4f}** | **{total_short * 100:.2f}%** |"
-                    )
-
-                net_equity = sum(positions.values())
-                gross = sum(abs(v) for v in positions.values())
-                n_holdings = sum(1 for v in positions.values() if abs(v) > cutoff)
-                lines.append("\n**CASH & SUMMARY**")
-                lines.append(f"- Cash: {cash:.4f} ({cash * 100:.2f}%)")
-                lines.append(
-                    f"- Net Equity: {net_equity:.4f} ({net_equity * 100:.2f}%)"
-                )
-                lines.append(f"- Gross Exposure: {gross:.4f} ({gross * 100:.2f}%)")
-                lines.append(f"- Holdings: {n_holdings}")
-                return "\n".join(lines)
-
-            def _render_period_table(label, result_dict):
-                """Render period results table with heatmap portfolio viewer."""
-                if not (
-                    result_dict.get("success")
-                    and isinstance(result_dict.get("results_df"), pd.DataFrame)
-                ):
-                    return
-                st.markdown(f"**{label}**")
-                df = (
-                    result_dict["results_df"]
-                    .reset_index()
-                    .rename(columns={"index": "date"})
-                )
-                df["date"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
-                st.dataframe(df, hide_index=True)
-
-                snapshots = result_dict.get("portfolio_snapshots", {})
-                if snapshots:
-                    with st.expander(f"📂 {label} — Portfolio Heatmap"):
-                        date_keys = list(snapshots.keys())
-                        date_labels = [
-                            str(d).split("T")[0].split(" ")[0] for d in date_keys
-                        ]
-                        selected = st.selectbox(
-                            "Select rebalancing period",
-                            date_labels,
-                            key=f"ptf_date_{label}",
-                        )
-                        idx = date_labels.index(selected)
-                        _hfig = _build_portfolio_treemap(
-                            snapshots[date_keys[idx]],
-                            f"— {selected}",
-                            notional=int(notional),
-                            mask_names=blog_mode,
-                        )
-                        st.plotly_chart(_hfig, width="stretch", key=f"ptf_hm_{label}_{idx}")
-
-            # Detailed tables
-            with st.expander("📋 Detailed Period Results", expanded=False):
-                _render_period_table("GPU Period Results", g)
-                cpu_label = "CPU Period Results"
-                _render_period_table(cpu_label, c)
+        with st.expander("📋 Detailed Period Results", expanded=False):
+            _render_period_table("GPU Period Results", g)
+            _render_period_table("CPU Period Results", c)
 
     # Disclaimer at the bottom
     st.markdown("---")
