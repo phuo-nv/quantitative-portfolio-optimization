@@ -413,7 +413,7 @@ def _build_rebalancing_plotly(
         paper_bgcolor="#000000",
         plot_bgcolor="#000000",
         title=dict(
-            text=f"Rebalancing Strategy {title_suffix}".strip(),
+            text=f"Backtest Rebalancing Strategies {title_suffix}".strip(),
             font=dict(size=13, color="#fafafa"),
         ),
         xaxis=dict(gridcolor="#222", showgrid=True, color="#aaa", title=""),
@@ -543,7 +543,7 @@ def _render_rebalancing_frame(
                     )
 
         ax.set_title(
-            f"Rebalancing Strategy {title_suffix}".strip(),
+            f"Backtest Rebalancing Strategies {title_suffix}".strip(),
             fontsize=10,
             fontweight="bold",
             color="#fafafa",
@@ -668,7 +668,7 @@ def _init_rebalancing_figure(title_suffix: str, xlim=None, ylim=None):
             fontweight=PlotStyling.FONT_WEIGHT,
         )
         ax.set_title(
-            f"Rebalancing Strategy {title_suffix}",
+            f"Backtest Rebalancing Strategies {title_suffix}",
             fontsize=PlotStyling.TITLE_FONTSIZE,
             fontweight=PlotStyling.FONT_WEIGHT,
             pad=PlotStyling.TITLE_PAD,
@@ -2450,6 +2450,8 @@ def run_progressive_rebalancing(
             _shared_yrange = None
 
         # GPU: animate or switch to interactive Plotly when done
+        _gpu_step = _gpu_total // 5 if (gpu_done and _gpu_total > 0) else _DAYS_PER_FRAME
+        _gpu_step = max(_gpu_step, _DAYS_PER_FRAME)
         if gpu_done and _gpu_anim_done and not gpu_plotly_rendered:
             gpu_plot_container.plotly_chart(
                 _build_rebalancing_plotly(
@@ -2468,7 +2470,7 @@ def run_progressive_rebalancing(
         elif not _gpu_anim_done and (
             gpu_display_idx < _gpu_total or (gpu_display_idx == 0 and _gpu_bh_total > 0)
         ):
-            gpu_display_idx = min(gpu_display_idx + _DAYS_PER_FRAME, _gpu_total)
+            gpu_display_idx = min(gpu_display_idx + _gpu_step, _gpu_total)
             _bh_idx = min(gpu_display_idx, _gpu_bh_total)
             gpu_plot_container.image(
                 _render_rebalancing_frame(
@@ -2484,6 +2486,8 @@ def run_progressive_rebalancing(
             )
 
         # CPU: animate or switch to interactive Plotly when done
+        _cpu_step = _cpu_total // 5 if (cpu_done and _cpu_total > 0) else _DAYS_PER_FRAME
+        _cpu_step = max(_cpu_step, _DAYS_PER_FRAME)
         if cpu_done and _cpu_anim_done and not cpu_plotly_rendered:
             cpu_plot_container.plotly_chart(
                 _build_rebalancing_plotly(
@@ -2502,7 +2506,7 @@ def run_progressive_rebalancing(
         elif not _cpu_anim_done and (
             cpu_display_idx < _cpu_total or (cpu_display_idx == 0 and _cpu_bh_total > 0)
         ):
-            cpu_display_idx = min(cpu_display_idx + _DAYS_PER_FRAME, _cpu_total)
+            cpu_display_idx = min(cpu_display_idx + _cpu_step, _cpu_total)
             _bh_idx = min(cpu_display_idx, _cpu_bh_total)
             cpu_plot_container.image(
                 _render_rebalancing_frame(
