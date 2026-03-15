@@ -432,7 +432,7 @@ def _build_rebalancing_plotly(
             xanchor="left",
             yanchor="top",
         ),
-        height=380,
+        height=275,
         margin=dict(l=50, r=15, t=30, b=25),
         hovermode="x unified",
     )
