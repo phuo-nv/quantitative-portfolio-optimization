@@ -2120,15 +2120,54 @@ def run_progressive_rebalancing(
     gpu_thread.start()
     cpu_process.start()
     cpu_bridge.start()
-    time.sleep(PerformanceParams.INITIALIZATION_DELAY)
 
-    # Show synchronization message
+    # Wait for both solvers to signal "ready" before starting the race
+    _gpu_ready = False
+    _cpu_ready = False
+    _sync_timeout = time.time() + 120  # 2 minute max wait
+    while not (_gpu_ready and _cpu_ready) and time.time() < _sync_timeout:
+        try:
+            while True:
+                upd = gpu_progress_q.get_nowait()
+                if upd.get("status") == "ready":
+                    _gpu_ready = True
+                    with gpu_progress_placeholder.container():
+                        st.info(upd.get("message", ""))
+                    gpu_progress_q.put(upd)  # re-queue for main loop
+                    break
+                elif upd.get("status") in ("initializing",):
+                    with gpu_progress_placeholder.container():
+                        st.info(upd.get("message", ""))
+                else:
+                    gpu_progress_q.put(upd)
+                    break
+        except queue.Empty:
+            pass
+        try:
+            while True:
+                upd = cpu_progress_q.get_nowait()
+                if upd.get("status") == "ready":
+                    _cpu_ready = True
+                    with cpu_progress_placeholder.container():
+                        st.info(upd.get("message", ""))
+                    cpu_progress_q.put(upd)
+                    break
+                elif upd.get("status") in ("initializing",):
+                    with cpu_progress_placeholder.container():
+                        st.info(upd.get("message", ""))
+                else:
+                    cpu_progress_q.put(upd)
+                    break
+        except queue.Empty:
+            pass
+        time.sleep(0.1)
+
     with gpu_progress_placeholder.container():
-        st.info(UIText.GPU_SYNCHRONIZED)
+        st.success("🚀 GPU ready — starting race!")
     with cpu_progress_placeholder.container():
-        st.info("🖥️ CPU synchronized and ready to race!")
+        st.success("🖥️ CPU ready — starting race!")
 
-    start_event.set()  # Signal both threads to start optimization simultaneously
+    start_event.set()  # Signal both to start simultaneously
 
     # Track completion status
     gpu_done = False
@@ -2261,7 +2300,6 @@ def run_progressive_rebalancing(
                         "bh_values": upd.get("bh_values", []),
                         "rebal_dates": upd.get("rebal_dates", []),
                     }
-                    gpu_display_idx = len(gpu_plot_data["cum_dates"])
                     gpu_final_time = upd.get(
                         "total_elapsed_time", time.time() - loop_start_time
                     )
@@ -2359,7 +2397,6 @@ def run_progressive_rebalancing(
                         "bh_values": upd.get("bh_values", []),
                         "rebal_dates": upd.get("rebal_dates", []),
                     }
-                    cpu_display_idx = len(cpu_plot_data["cum_dates"])
                     cpu_final_time = upd.get(
                         "total_elapsed_time", time.time() - loop_start_time
                     )
@@ -2450,8 +2487,8 @@ def run_progressive_rebalancing(
             _shared_yrange = None
 
         # GPU: animate or switch to interactive Plotly when done
-        _gpu_step = _gpu_total // 5 if (gpu_done and _gpu_total > 0) else _DAYS_PER_FRAME
-        _gpu_step = max(_gpu_step, _DAYS_PER_FRAME)
+        _gpu_remaining = max(1, _gpu_total - gpu_display_idx)
+        _gpu_step = max(_DAYS_PER_FRAME, _gpu_remaining // 10) if gpu_done else _DAYS_PER_FRAME
         if gpu_done and _gpu_anim_done and not gpu_plotly_rendered:
             gpu_plot_container.plotly_chart(
                 _build_rebalancing_plotly(
@@ -2486,8 +2523,8 @@ def run_progressive_rebalancing(
             )
 
         # CPU: animate or switch to interactive Plotly when done
-        _cpu_step = _cpu_total // 5 if (cpu_done and _cpu_total > 0) else _DAYS_PER_FRAME
-        _cpu_step = max(_cpu_step, _DAYS_PER_FRAME)
+        _cpu_remaining = max(1, _cpu_total - cpu_display_idx)
+        _cpu_step = max(_DAYS_PER_FRAME, _cpu_remaining // 10) if cpu_done else _DAYS_PER_FRAME
         if cpu_done and _cpu_anim_done and not cpu_plotly_rendered:
             cpu_plot_container.plotly_chart(
                 _build_rebalancing_plotly(
