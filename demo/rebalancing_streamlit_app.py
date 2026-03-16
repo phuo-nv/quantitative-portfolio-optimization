@@ -555,9 +555,12 @@ def _render_rebalancing_frame(
         )
         ax.set_ylabel("Cumulative Value", fontsize=11, color="#aaa")
         ax.tick_params(colors="#888", labelsize=9)
-        ax.grid(True, alpha=0.2, color="#333")
-        for spine in ax.spines.values():
-            spine.set_visible(False)
+        ax.grid(True, alpha=0.3, color="#333", linestyle="-", linewidth=0.5)
+        ax.set_axisbelow(True)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["left"].set_color("#444")
+        ax.spines["bottom"].set_color("#444")
         if yaxis_range is not None:
             ax.set_ylim(yaxis_range)
         if cum_dates or bh_dates:
@@ -2177,13 +2180,14 @@ def run_progressive_rebalancing(
                         "rebal_dates": upd.get("rebal_dates", []),
                     }
                     gpu_display_idx = len(gpu_plot_data["cum_dates"])
-                    # 2) Render animation frame
+                    # 2) Render animation frame (clip buy-and-hold to match cumulative range)
+                    _gpu_bh_clip = len(gpu_plot_data["cum_dates"])
                     gpu_plot_container.image(
                         _render_rebalancing_frame(
                             gpu_plot_data["cum_dates"],
                             gpu_plot_data["cum_values"],
-                            gpu_plot_data["bh_dates"],
-                            gpu_plot_data["bh_values"],
+                            gpu_plot_data["bh_dates"][:_gpu_bh_clip],
+                            gpu_plot_data["bh_values"][:_gpu_bh_clip],
                             gpu_plot_data["rebal_dates"],
                             "— GPU",
                         ),
@@ -2288,13 +2292,14 @@ def run_progressive_rebalancing(
                         "rebal_dates": upd.get("rebal_dates", []),
                     }
                     cpu_display_idx = len(cpu_plot_data["cum_dates"])
-                    # 2) Render animation frame
+                    # 2) Render animation frame (clip buy-and-hold to match cumulative range)
+                    _cpu_bh_clip = len(cpu_plot_data["cum_dates"])
                     cpu_plot_container.image(
                         _render_rebalancing_frame(
                             cpu_plot_data["cum_dates"],
                             cpu_plot_data["cum_values"],
-                            cpu_plot_data["bh_dates"],
-                            cpu_plot_data["bh_values"],
+                            cpu_plot_data["bh_dates"][:_cpu_bh_clip],
+                            cpu_plot_data["bh_values"][:_cpu_bh_clip],
                             cpu_plot_data["rebal_dates"],
                             "— CPU",
                         ),
@@ -2439,6 +2444,33 @@ def run_progressive_rebalancing(
             _shared_yrange = None
 
         if gpu_done and cpu_done:
+            # Render final frame for both solvers
+            if gpu_plot_data["cum_dates"]:
+                gpu_plot_container.image(
+                    _render_rebalancing_frame(
+                        gpu_plot_data["cum_dates"],
+                        gpu_plot_data["cum_values"],
+                        gpu_plot_data["bh_dates"],
+                        gpu_plot_data["bh_values"],
+                        gpu_plot_data["rebal_dates"],
+                        "— GPU",
+                        yaxis_range=_shared_yrange,
+                    ),
+                    width="stretch",
+                )
+            if cpu_plot_data["cum_dates"]:
+                cpu_plot_container.image(
+                    _render_rebalancing_frame(
+                        cpu_plot_data["cum_dates"],
+                        cpu_plot_data["cum_values"],
+                        cpu_plot_data["bh_dates"],
+                        cpu_plot_data["bh_values"],
+                        cpu_plot_data["rebal_dates"],
+                        "— CPU",
+                        yaxis_range=_shared_yrange,
+                    ),
+                    width="stretch",
+                )
             break
 
         time.sleep(PerformanceParams.MAIN_LOOP_DELAY)
