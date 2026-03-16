@@ -3087,7 +3087,9 @@ def main():
             "397 assets (log scale)."
         )
         if bench_img.exists():
-            st.image(str(bench_img), width="stretch")
+            col_b1, col_b2, col_b3 = st.columns([1, 3, 1])
+            with col_b2:
+                st.image(str(bench_img), width="stretch")
         st.caption("GPU speedups grow with problem size: up to 232x at 50k scenarios.")
 
     with tab_refs:
