@@ -2885,7 +2885,9 @@ def main():
             "through the backtest in real time."
         )
         if gif_path.exists():
-            st.image(str(gif_path), width="stretch")
+            col_g1, col_g2, col_g3 = st.columns([1, 3, 1])
+            with col_g2:
+                st.image(str(gif_path), width="stretch")
             st.caption(
                 "Using the cuOpt GPU solver (left), you can test rebalancing "
                 "strategies much faster than using a CPU solver (right) — shown at 4x speed."
