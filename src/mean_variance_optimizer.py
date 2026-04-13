@@ -199,7 +199,7 @@ class MeanVariance(base_optimizer.BaseOptimizer):
 
         # Set up expressions for optimization
         self.expected_ptf_returns = self.mean.T @ self.w
-        self.portfolio_variance = cp.quad_form(self.w, self.covariance)
+        self.portfolio_variance = cp.quad_form(self.w, cp.psd_wrap(self.covariance))
 
         # Add variable bounds constraints (only if using parameter constraints)
         constraints = []
