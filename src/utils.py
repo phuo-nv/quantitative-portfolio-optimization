@@ -449,6 +449,22 @@ def portfolio_plot_with_backtest(
     plt.show()
 
 
+def _solver_display_label(name):
+    """Return a friendly display label for a solver name.
+
+    The cuOpt GPU solver is always displayed as 'cuOpt (GPU)' regardless of
+    whether it was invoked via CVXPY (``cp.CUOPT`` -> ``str`` -> ``"CUOPT"``)
+    or via the cuOpt Python API (which already uses ``"cuOpt"``). All other
+    solvers are CPU-side CVXPY backends (CLARABEL, SCS, ECOS, ...) and are
+    suffixed with '(CPU)'.
+    """
+    if name is None:
+        return "Unknown"
+    if name.upper() == "CUOPT":
+        return "cuOpt (GPU)"
+    return f"{name} (CPU)"
+
+
 def compare_results(*results_list):
     """
     Compare and display results from multiple solvers in tabular format.
@@ -479,19 +495,17 @@ def compare_results(*results_list):
     print(f"{'Solver':<15}" + "".join(f" {k:<12}" for k in keys))
     print("-" * 70)
     for r in results:
-        print(
-            f"{r.get('solver', 'Unknown'):<15}"
-            + "".join(f" {(r.get(k) or 0):<12.6f}" for k in keys)
-        )
+        label = _solver_display_label(r.get("solver"))
+        print(f"{label:<15}" + "".join(f" {(r.get(k) or 0):<12.6f}" for k in keys))
 
     # Objective differences
     if len(results) > 1 and "obj" in keys:
         print("\nObjective Differences:")
         for i, r1 in enumerate(results):
             for r2 in results[i + 1 :]:
-                print(
-                    f"  {r1.get('solver')} vs {r2.get('solver')}: {abs(r1.get('obj', 0) - r2.get('obj', 0)):.8f}"
-                )
+                l1 = _solver_display_label(r1.get("solver"))
+                l2 = _solver_display_label(r2.get("solver"))
+                print(f"  {l1} vs {l2}: {abs(r1.get('obj', 0) - r2.get('obj', 0)):.8f}")
 
     print()  # Add blank line for better readability
 
