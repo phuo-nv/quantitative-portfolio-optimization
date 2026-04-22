@@ -18,6 +18,7 @@ from cufolio.settings import ReturnsComputeSettings, ScenarioGenerationSettings
 from cufolio.utils import (
     calculate_log_returns,
     calculate_returns,
+    compare_results,
     compute_absolute_returns,
 )
 from pydantic import ValidationError
@@ -476,3 +477,38 @@ class TestBacktester:
         mdd = bt.max_drawdown(values)
         expected = (1.1 - 0.9) / 1.1
         np.testing.assert_allclose(mdd, expected, atol=1e-10)
+
+
+class TestCompareResultsLabels:
+    """Output of compare_results must contain 'cuOpt' (mixed case) for the
+    GPU solver regardless of whether it was invoked via CVXPY's `cp.CUOPT`
+    (which str()'s to 'CUOPT') or the cuOpt Python API (which uses 'cuOpt').
+    The QA-image notebook test parses the rendered output for the literal
+    string 'cuOpt' followed by a solve time, so this is a contract."""
+
+    @staticmethod
+    def _row(solver, t=1.234):
+        return pd.Series(
+            {"regime": "r", "solver": solver, "solve time": t, "obj": -0.5}
+        )
+
+    def test_cvxpy_cuopt_displays_as_cuopt_gpu(self, capsys):
+        compare_results(self._row("CUOPT"), self._row("CLARABEL", t=5.6))
+        out = capsys.readouterr().out
+        assert "cuOpt (GPU)" in out
+        assert "CLARABEL (CPU)" in out
+        # The QA pattern is roughly r"cuOpt.*?(\d+\.\d+)" - make sure it matches
+        import re
+
+        assert re.search(r"cuOpt.*?(\d+\.\d+)", out)
+
+    def test_cuopt_python_api_displays_as_cuopt_gpu(self, capsys):
+        compare_results(self._row("cuOpt"), self._row("CLARABEL", t=5.6))
+        out = capsys.readouterr().out
+        assert "cuOpt (GPU)" in out
+        assert "CLARABEL (CPU)" in out
+
+    def test_objective_diff_uses_friendly_labels(self, capsys):
+        compare_results(self._row("CUOPT"), self._row("CLARABEL", t=5.6))
+        out = capsys.readouterr().out
+        assert "cuOpt (GPU) vs CLARABEL (CPU)" in out
