@@ -128,9 +128,9 @@ class rebalance_portfolio:
             self.dataset_directory, index_col=0, parse_dates=True
         )
         price_data_start = self.trading_start - pd.Timedelta(days=self.look_back_window)
-        assert (
-            price_data_start >= self.price_data.index[0]
-        ), "Invalid start date - choose a later date!"
+        assert price_data_start >= self.price_data.index[0], (
+            "Invalid start date - choose a later date!"
+        )
 
     def re_optimize(
         self,
@@ -248,13 +248,10 @@ class rebalance_portfolio:
                 }
 
                 optimize_returns_dict = utils.calculate_returns(
-                    self.price_data,
-                    optimize_regime,
-                    self.returns_compute_settings
+                    self.price_data, optimize_regime, self.returns_compute_settings
                 )
                 optimize_returns_dict = cvar_utils.generate_cvar_data(
-                    optimize_returns_dict, 
-                    self.scenario_generation_settings
+                    optimize_returns_dict, self.scenario_generation_settings
                 )
 
                 re_optimize_problem = cvar_optimizer.CVaR(
@@ -366,10 +363,12 @@ class rebalance_portfolio:
                 current_portfolio, tail_returns, benchmark_portfolios=None
             )
             tail_result = tail_bt.backtest_single_portfolio(current_portfolio)
-            cumulative_portfolio_value_array = np.concatenate((
-                cumulative_portfolio_value_array,
-                tail_result["cumulative returns"].values[0] * portfolio_value,
-            ))
+            cumulative_portfolio_value_array = np.concatenate(
+                (
+                    cumulative_portfolio_value_array,
+                    tail_result["cumulative returns"].values[0] * portfolio_value,
+                )
+            )
             cumulative_portfolio_value_dates.extend(tail_bt._dates)
 
         # Convert to pandas Series with dates as index, ensuring proper datetime format
@@ -603,7 +602,11 @@ class rebalance_portfolio:
         color_schemes = {
             "modern": {
                 "frontier": "#7cd7fe",
-                "benchmark": ["#ef9100", "#ff8181", "#0d8473"], #NVIDIA orange, red, dark teal
+                "benchmark": [
+                    "#ef9100",
+                    "#ff8181",
+                    "#0d8473",
+                ],  # NVIDIA orange, red, dark teal
                 "assets": "#c359ef",
                 "custom": "#fc79ca",
                 "background": "#FFFFFF",
@@ -917,9 +920,9 @@ class rebalance_portfolio:
         AssertionError
             If ticker not found in price data.
         """
-        assert (
-            ticker in self.price_data.columns
-        ), "The selected ticker is not in the asset universe!"
+        assert ticker in self.price_data.columns, (
+            "The selected ticker is not in the asset universe!"
+        )
 
         ticker_idx = list(self.price_data.columns).index(ticker)
         ticker_weights_history = [
@@ -931,7 +934,9 @@ class rebalance_portfolio:
         plot_end_date = re_optimize_results.index[-1]
         price_data = self.price_data.loc[plot_start_date:plot_end_date, ticker]
         ax1.plot(price_data, color="red", label=f"{ticker} prices")
-        ax1.set_title(plot_title if plot_title is not None else f"{ticker} weights vs. prices")
+        ax1.set_title(
+            plot_title if plot_title is not None else f"{ticker} weights vs. prices"
+        )
 
         ax2 = ax1.twinx()
         ax2.bar(

@@ -16,8 +16,8 @@
 """Utility functions for portfolio optimization and data processing."""
 
 import os
-
 from typing import Union
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -87,11 +87,14 @@ def calculate_returns(
 
     if regime_dict is None or regime_dict.get("range") is None:
         input_data = input_data
-        regime_dict = {"name": "Default", "range": (input_data.index[0], input_data.index[-1])}
+        regime_dict = {
+            "name": "Default",
+            "range": (input_data.index[0], input_data.index[-1]),
+        }
     else:
         start, end = regime_dict["range"]
         input_data = input_data.loc[start:end]
-        
+
     input_data = input_data.dropna(axis=1)
 
     if return_type == "LOG":
@@ -132,7 +135,7 @@ def calculate_log_returns(price_data, freq=1):
 
 def compute_linear_returns(price_data, freq=1):
     """
-    compute the simple returns using freq. For example, 
+    compute the simple returns using freq. For example,
     freq = 1 means (today - yesterday) / yesterday.
     """
     returns_dataframe = price_data.pct_change(freq)
@@ -144,7 +147,7 @@ def compute_linear_returns(price_data, freq=1):
 
 def compute_absolute_returns(price_data, freq=1):
     """
-    compute the absolute returns using freq. 
+    compute the absolute returns using freq.
     For example, freq = 1 means today - yesterday.
     """
     returns_dataframe = price_data.diff(freq)
@@ -446,6 +449,22 @@ def portfolio_plot_with_backtest(
     plt.show()
 
 
+def _solver_display_label(name):
+    """Return a friendly display label for a solver name.
+
+    The cuOpt GPU solver is always displayed as 'cuOpt (GPU)' regardless of
+    whether it was invoked via CVXPY (``cp.CUOPT`` -> ``str`` -> ``"CUOPT"``)
+    or via the cuOpt Python API (which already uses ``"cuOpt"``). All other
+    solvers are CPU-side CVXPY backends (CLARABEL, SCS, ECOS, ...) and are
+    suffixed with '(CPU)'.
+    """
+    if name is None:
+        return "Unknown"
+    if name.upper() == "CUOPT":
+        return "cuOpt (GPU)"
+    return f"{name} (CPU)"
+
+
 def compare_results(*results_list):
     """
     Compare and display results from multiple solvers in tabular format.
@@ -461,8 +480,12 @@ def compare_results(*results_list):
     # Find common numeric keys, sorted: solve time, obj, then rest
     common = set.intersection(*[set(r.keys()) for r in results])
     keys = sorted(
-        [k for k in common if k != "solver" and isinstance(results[0].get(k), (int, float))],
-        key=lambda x: (0 if x == "solve time" else 1 if x == "obj" else 2, x)
+        [
+            k
+            for k in common
+            if k != "solver" and isinstance(results[0].get(k), (int, float))
+        ],
+        key=lambda x: (0 if x == "solve time" else 1 if x == "obj" else 2, x),
     )
 
     # Print table
@@ -472,66 +495,554 @@ def compare_results(*results_list):
     print(f"{'Solver':<15}" + "".join(f" {k:<12}" for k in keys))
     print("-" * 70)
     for r in results:
-        print(f"{r.get('solver', 'Unknown'):<15}" + "".join(f" {(r.get(k) or 0):<12.6f}" for k in keys))
+        label = _solver_display_label(r.get("solver"))
+        print(f"{label:<15}" + "".join(f" {(r.get(k) or 0):<12.6f}" for k in keys))
 
     # Objective differences
     if len(results) > 1 and "obj" in keys:
         print("\nObjective Differences:")
         for i, r1 in enumerate(results):
-            for r2 in results[i + 1:]:
-                print(f"  {r1.get('solver')} vs {r2.get('solver')}: {abs(r1.get('obj', 0) - r2.get('obj', 0)):.8f}")
+            for r2 in results[i + 1 :]:
+                l1 = _solver_display_label(r1.get("solver"))
+                l2 = _solver_display_label(r2.get("solver"))
+                print(f"  {l1} vs {l2}: {abs(r1.get('obj', 0) - r2.get('obj', 0)):.8f}")
 
     print()  # Add blank line for better readability
 
 
 SP500_TICKERS = [
-    'A', 'AAPL', 'ABT', 'ACGL', 'ACN', 'ADBE', 'ADI', 'ADM', 'ADP', 'ADSK', 'AEE', 'AEP', 'AES', 'AFL', 'AIG', 'AIZ', 'AJG', 'AKAM', 'ALB', 'ALGN',
-    'ALL', 'AMAT', 'AMD', 'AME', 'AMGN', 'AMT', 'AMZN', 'AON', 'AOS', 'APA', 'APD', 'APH', 'ARE', 'ATO', 'AVB', 'AVY', 'AXON', 'AXP', 'AZO',
-    'BA', 'BAC', 'BALL', 'BAX', 'BBWI', 'BBY', 'BDX', 'BEN', 'BG', 'BIIB', 'BIO', 'BK', 'BKNG', 'BKR', 'BLK', 'BMY', 'BRO', 'BSX', 'BWA', 'BXP',
-    'C', 'CAG', 'CAH', 'CAT', 'CB', 'CBRE', 'CCI', 'CCL', 'CDNS', 'CHD', 'CHRW', 'CI', 'CINF', 'CL', 'CLX', 'CMA', 'CMCSA', 'CME', 'CMI', 'CMS',
-    'CNC', 'CNP', 'COF', 'COO', 'COP', 'COR', 'COST', 'CPB', 'CPRT', 'CPT', 'CRL', 'CRM', 'CSCO', 'CSGP', 'CSX', 'CTAS', 'CTRA', 'CTSH', 'CVS', 'CVX',
-    'D', 'DD', 'DE', 'DECK', 'DGX', 'DHI', 'DHR', 'DIS', 'DLR', 'DLTR', 'DOC', 'DOV', 'DPZ', 'DRI', 'DTE', 'DUK', 'DVA', 'DVN',
-    'EA', 'EBAY', 'ECL', 'ED', 'EFX', 'EG', 'EIX', 'EL', 'ELV', 'EMN', 'EMR', 'EOG', 'EQIX', 'EQR', 'EQT', 'ES', 'ESS', 'ETN', 'ETR', 'EVRG',
-    'EW', 'EXC', 'EXPD', 'EXR', 'F', 'FAST', 'FCX', 'FDS', 'FDX', 'FE', 'FFIV', 'FICO', 'FIS', 'FITB', 'FMC', 'FRT',
-    'GD', 'GE', 'GEN', 'GILD', 'GIS', 'GL', 'GLW', 'GOOG', 'GOOGL', 'GPC', 'GPN', 'GRMN', 'GS', 'GWW',
-    'HAL', 'HAS', 'HBAN', 'HD', 'HIG', 'HOLX', 'HON', 'HPQ', 'HRL', 'HSIC', 'HST', 'HSY', 'HUBB', 'HUM',
-    'IBM', 'IDXX', 'IEX', 'IFF', 'ILMN', 'INCY', 'INTC', 'INTU', 'IP', 'IRM', 'ISRG', 'IT', 'ITW', 'IVZ',
-    'J', 'JBHT', 'JBL', 'JCI', 'JKHY', 'JNJ', 'JPM', 'KEY', 'KIM', 'KLAC', 'KMB', 'KMX', 'KO', 'KR',
-    'L', 'LEN', 'LH', 'LHX', 'LIN', 'LKQ', 'LLY', 'LMT', 'LNT', 'LOW', 'LRCX', 'LUV', 'LVS',
-    'MAA', 'MAR', 'MAS', 'MCD', 'MCHP', 'MCK', 'MCO', 'MDLZ', 'MDT', 'MET', 'MGM', 'MHK', 'MKC', 'MKTX', 'MLM', 'MMC', 'MMM', 'MNST', 'MO', 'MOH',
-    'MOS', 'MPWR', 'MRK', 'MS', 'MSFT', 'MSI', 'MTB', 'MTCH', 'MTD', 'MU',
-    'NDAQ', 'NDSN', 'NEE', 'NEM', 'NFLX', 'NI', 'NKE', 'NOC', 'NRG', 'NSC', 'NTAP', 'NTRS', 'NUE', 'NVDA', 'NVR',
-    'O', 'ODFL', 'OKE', 'OMC', 'ON', 'ORCL', 'ORLY', 'OXY',
-    'PAYX', 'PCAR', 'PCG', 'PEG', 'PEP', 'PFE', 'PFG', 'PG', 'PGR', 'PH', 'PHM', 'PKG', 'PLD', 'PNC', 'PNR', 'PNW', 'POOL', 'PPG', 'PPL', 'PRU',
-    'PSA', 'PTC', 'PWR', 'QCOM',
-    'RCL', 'REG', 'REGN', 'RF', 'RHI', 'RJF', 'RL', 'RMD', 'ROK', 'ROL', 'ROP', 'ROST', 'RSG', 'RTX', 'RVTY',
-    'SBAC', 'SBUX', 'SCHW', 'SHW', 'SJM', 'SLB', 'SNA', 'SNPS', 'SO', 'SPG', 'SPGI', 'SRE', 'STE', 'STLD', 'STT', 'STX', 'STZ', 'SWK', 'SWKS', 'SYK',
-    'SYY', 'T', 'TAP', 'TDY', 'TECH', 'TER', 'TFC', 'TFX', 'TGT', 'TJX', 'TMO', 'TPR', 'TRMB', 'TROW', 'TRV', 'TSCO', 'TSN', 'TT', 'TTWO', 'TXN',
-    'TXT', 'TYL', 'UDR', 'UHS', 'UNH', 'UNP', 'UPS', 'URI', 'USB',
-    'VLO', 'VMC', 'VRSN', 'VRTX', 'VTR', 'VTRS', 'VZ',
-    'WAB', 'WAT', 'WDC', 'WEC', 'WELL', 'WFC', 'WM', 'WMB', 'WMT', 'WRB', 'WST', 'WTW', 'WY', 'WYNN',
-    'XEL', 'XOM', 'YUM', 'ZBH', 'ZBRA',
+    "A",
+    "AAPL",
+    "ABT",
+    "ACGL",
+    "ACN",
+    "ADBE",
+    "ADI",
+    "ADM",
+    "ADP",
+    "ADSK",
+    "AEE",
+    "AEP",
+    "AES",
+    "AFL",
+    "AIG",
+    "AIZ",
+    "AJG",
+    "AKAM",
+    "ALB",
+    "ALGN",
+    "ALL",
+    "AMAT",
+    "AMD",
+    "AME",
+    "AMGN",
+    "AMT",
+    "AMZN",
+    "AON",
+    "AOS",
+    "APA",
+    "APD",
+    "APH",
+    "ARE",
+    "ATO",
+    "AVB",
+    "AVY",
+    "AXON",
+    "AXP",
+    "AZO",
+    "BA",
+    "BAC",
+    "BALL",
+    "BAX",
+    "BBWI",
+    "BBY",
+    "BDX",
+    "BEN",
+    "BG",
+    "BIIB",
+    "BIO",
+    "BK",
+    "BKNG",
+    "BKR",
+    "BLK",
+    "BMY",
+    "BRO",
+    "BSX",
+    "BWA",
+    "BXP",
+    "C",
+    "CAG",
+    "CAH",
+    "CAT",
+    "CB",
+    "CBRE",
+    "CCI",
+    "CCL",
+    "CDNS",
+    "CHD",
+    "CHRW",
+    "CI",
+    "CINF",
+    "CL",
+    "CLX",
+    "CMA",
+    "CMCSA",
+    "CME",
+    "CMI",
+    "CMS",
+    "CNC",
+    "CNP",
+    "COF",
+    "COO",
+    "COP",
+    "COR",
+    "COST",
+    "CPB",
+    "CPRT",
+    "CPT",
+    "CRL",
+    "CRM",
+    "CSCO",
+    "CSGP",
+    "CSX",
+    "CTAS",
+    "CTRA",
+    "CTSH",
+    "CVS",
+    "CVX",
+    "D",
+    "DD",
+    "DE",
+    "DECK",
+    "DGX",
+    "DHI",
+    "DHR",
+    "DIS",
+    "DLR",
+    "DLTR",
+    "DOC",
+    "DOV",
+    "DPZ",
+    "DRI",
+    "DTE",
+    "DUK",
+    "DVA",
+    "DVN",
+    "EA",
+    "EBAY",
+    "ECL",
+    "ED",
+    "EFX",
+    "EG",
+    "EIX",
+    "EL",
+    "ELV",
+    "EMN",
+    "EMR",
+    "EOG",
+    "EQIX",
+    "EQR",
+    "EQT",
+    "ES",
+    "ESS",
+    "ETN",
+    "ETR",
+    "EVRG",
+    "EW",
+    "EXC",
+    "EXPD",
+    "EXR",
+    "F",
+    "FAST",
+    "FCX",
+    "FDS",
+    "FDX",
+    "FE",
+    "FFIV",
+    "FICO",
+    "FIS",
+    "FITB",
+    "FMC",
+    "FRT",
+    "GD",
+    "GE",
+    "GEN",
+    "GILD",
+    "GIS",
+    "GL",
+    "GLW",
+    "GOOG",
+    "GOOGL",
+    "GPC",
+    "GPN",
+    "GRMN",
+    "GS",
+    "GWW",
+    "HAL",
+    "HAS",
+    "HBAN",
+    "HD",
+    "HIG",
+    "HOLX",
+    "HON",
+    "HPQ",
+    "HRL",
+    "HSIC",
+    "HST",
+    "HSY",
+    "HUBB",
+    "HUM",
+    "IBM",
+    "IDXX",
+    "IEX",
+    "IFF",
+    "ILMN",
+    "INCY",
+    "INTC",
+    "INTU",
+    "IP",
+    "IRM",
+    "ISRG",
+    "IT",
+    "ITW",
+    "IVZ",
+    "J",
+    "JBHT",
+    "JBL",
+    "JCI",
+    "JKHY",
+    "JNJ",
+    "JPM",
+    "KEY",
+    "KIM",
+    "KLAC",
+    "KMB",
+    "KMX",
+    "KO",
+    "KR",
+    "L",
+    "LEN",
+    "LH",
+    "LHX",
+    "LIN",
+    "LKQ",
+    "LLY",
+    "LMT",
+    "LNT",
+    "LOW",
+    "LRCX",
+    "LUV",
+    "LVS",
+    "MAA",
+    "MAR",
+    "MAS",
+    "MCD",
+    "MCHP",
+    "MCK",
+    "MCO",
+    "MDLZ",
+    "MDT",
+    "MET",
+    "MGM",
+    "MHK",
+    "MKC",
+    "MKTX",
+    "MLM",
+    "MMC",
+    "MMM",
+    "MNST",
+    "MO",
+    "MOH",
+    "MOS",
+    "MPWR",
+    "MRK",
+    "MS",
+    "MSFT",
+    "MSI",
+    "MTB",
+    "MTCH",
+    "MTD",
+    "MU",
+    "NDAQ",
+    "NDSN",
+    "NEE",
+    "NEM",
+    "NFLX",
+    "NI",
+    "NKE",
+    "NOC",
+    "NRG",
+    "NSC",
+    "NTAP",
+    "NTRS",
+    "NUE",
+    "NVDA",
+    "NVR",
+    "O",
+    "ODFL",
+    "OKE",
+    "OMC",
+    "ON",
+    "ORCL",
+    "ORLY",
+    "OXY",
+    "PAYX",
+    "PCAR",
+    "PCG",
+    "PEG",
+    "PEP",
+    "PFE",
+    "PFG",
+    "PG",
+    "PGR",
+    "PH",
+    "PHM",
+    "PKG",
+    "PLD",
+    "PNC",
+    "PNR",
+    "PNW",
+    "POOL",
+    "PPG",
+    "PPL",
+    "PRU",
+    "PSA",
+    "PTC",
+    "PWR",
+    "QCOM",
+    "RCL",
+    "REG",
+    "REGN",
+    "RF",
+    "RHI",
+    "RJF",
+    "RL",
+    "RMD",
+    "ROK",
+    "ROL",
+    "ROP",
+    "ROST",
+    "RSG",
+    "RTX",
+    "RVTY",
+    "SBAC",
+    "SBUX",
+    "SCHW",
+    "SHW",
+    "SJM",
+    "SLB",
+    "SNA",
+    "SNPS",
+    "SO",
+    "SPG",
+    "SPGI",
+    "SRE",
+    "STE",
+    "STLD",
+    "STT",
+    "STX",
+    "STZ",
+    "SWK",
+    "SWKS",
+    "SYK",
+    "SYY",
+    "T",
+    "TAP",
+    "TDY",
+    "TECH",
+    "TER",
+    "TFC",
+    "TFX",
+    "TGT",
+    "TJX",
+    "TMO",
+    "TPR",
+    "TRMB",
+    "TROW",
+    "TRV",
+    "TSCO",
+    "TSN",
+    "TT",
+    "TTWO",
+    "TXN",
+    "TXT",
+    "TYL",
+    "UDR",
+    "UHS",
+    "UNH",
+    "UNP",
+    "UPS",
+    "URI",
+    "USB",
+    "VLO",
+    "VMC",
+    "VRSN",
+    "VRTX",
+    "VTR",
+    "VTRS",
+    "VZ",
+    "WAB",
+    "WAT",
+    "WDC",
+    "WEC",
+    "WELL",
+    "WFC",
+    "WM",
+    "WMB",
+    "WMT",
+    "WRB",
+    "WST",
+    "WTW",
+    "WY",
+    "WYNN",
+    "XEL",
+    "XOM",
+    "YUM",
+    "ZBH",
+    "ZBRA",
 ]
 
 SP100_TICKERS = [
-    'AAPL', 'ABBV', 'ABT', 'ACN', 'ADBE', 'AIG', 'AMD', 'AMGN', 'AMT', 'AMZN',
-    'AVGO', 'AXP', 'BA', 'BAC', 'BK', 'BKNG', 'BLK', 'BMY', 'BRK-B', 'C',
-    'CAT', 'CHTR', 'CI', 'CL', 'CMCSA', 'COF', 'COP', 'COST', 'CRM', 'CSCO',
-    'CVS', 'CVX', 'DE', 'DHR', 'DIS', 'DUK', 'EMR', 'EXC', 'F', 'FDX',
-    'GD', 'GE', 'GILD', 'GM', 'GOOG', 'GOOGL', 'GS', 'HD', 'HON', 'IBM',
-    'INTC', 'INTU', 'ISRG', 'JNJ', 'JPM', 'KHC', 'KO', 'LIN', 'LLY', 'LMT',
-    'LOW', 'MA', 'MCD', 'MDLZ', 'MDT', 'MET', 'META', 'MMM', 'MO', 'MRK',
-    'MS', 'MSFT', 'NEE', 'NFLX', 'NKE', 'NOC', 'NVDA', 'ORCL', 'PEP', 'PFE',
-    'PG', 'PM', 'PYPL', 'QCOM', 'RTX', 'SBUX', 'SCHW', 'SLB', 'SO', 'SPG',
-    'T', 'TGT', 'TMO', 'TMUS', 'TSLA', 'TXN', 'UNH', 'UNP', 'UPS', 'USB',
-    'V', 'VZ', 'WFC', 'WMT', 'XOM',
+    "AAPL",
+    "ABBV",
+    "ABT",
+    "ACN",
+    "ADBE",
+    "AIG",
+    "AMD",
+    "AMGN",
+    "AMT",
+    "AMZN",
+    "AVGO",
+    "AXP",
+    "BA",
+    "BAC",
+    "BK",
+    "BKNG",
+    "BLK",
+    "BMY",
+    "BRK-B",
+    "C",
+    "CAT",
+    "CHTR",
+    "CI",
+    "CL",
+    "CMCSA",
+    "COF",
+    "COP",
+    "COST",
+    "CRM",
+    "CSCO",
+    "CVS",
+    "CVX",
+    "DE",
+    "DHR",
+    "DIS",
+    "DUK",
+    "EMR",
+    "EXC",
+    "F",
+    "FDX",
+    "GD",
+    "GE",
+    "GILD",
+    "GM",
+    "GOOG",
+    "GOOGL",
+    "GS",
+    "HD",
+    "HON",
+    "IBM",
+    "INTC",
+    "INTU",
+    "ISRG",
+    "JNJ",
+    "JPM",
+    "KHC",
+    "KO",
+    "LIN",
+    "LLY",
+    "LMT",
+    "LOW",
+    "MA",
+    "MCD",
+    "MDLZ",
+    "MDT",
+    "MET",
+    "META",
+    "MMM",
+    "MO",
+    "MRK",
+    "MS",
+    "MSFT",
+    "NEE",
+    "NFLX",
+    "NKE",
+    "NOC",
+    "NVDA",
+    "ORCL",
+    "PEP",
+    "PFE",
+    "PG",
+    "PM",
+    "PYPL",
+    "QCOM",
+    "RTX",
+    "SBUX",
+    "SCHW",
+    "SLB",
+    "SO",
+    "SPG",
+    "T",
+    "TGT",
+    "TMO",
+    "TMUS",
+    "TSLA",
+    "TXN",
+    "UNH",
+    "UNP",
+    "UPS",
+    "USB",
+    "V",
+    "VZ",
+    "WFC",
+    "WMT",
+    "XOM",
 ]
 
 DOW30_TICKERS = [
-    'AAPL', 'AMGN', 'AMZN', 'AXP', 'BA', 'CAT', 'CRM', 'CSCO', 'CVX', 'DIS',
-    'DOW', 'GS', 'HD', 'HON', 'IBM', 'INTC', 'JNJ', 'JPM', 'KO', 'MCD',
-    'MMM', 'MRK', 'MSFT', 'NKE', 'NVDA', 'PG', 'SHW', 'TRV', 'UNH', 'V',
-    'VZ', 'WMT',
+    "AAPL",
+    "AMGN",
+    "AMZN",
+    "AXP",
+    "BA",
+    "CAT",
+    "CRM",
+    "CSCO",
+    "CVX",
+    "DIS",
+    "DOW",
+    "GS",
+    "HD",
+    "HON",
+    "IBM",
+    "INTC",
+    "JNJ",
+    "JPM",
+    "KO",
+    "MCD",
+    "MMM",
+    "MRK",
+    "MSFT",
+    "NKE",
+    "NVDA",
+    "PG",
+    "SHW",
+    "TRV",
+    "UNH",
+    "V",
+    "VZ",
+    "WMT",
 ]
 
 DATASET_TICKERS = {
@@ -541,14 +1052,15 @@ DATASET_TICKERS = {
 }
 
 
-def _download_tickers(tickers, output_path, start_date="2005-01-01",
-                       end_date="2025-01-01", batch_size=50):
+def _download_tickers(
+    tickers, output_path, start_date="2005-01-01", end_date="2025-01-01", batch_size=50
+):
     """Download closing prices for a list of tickers and save to CSV."""
     frames = []
     for i in range(0, len(tickers), batch_size):
-        batch = tickers[i:i + batch_size]
+        batch = tickers[i : i + batch_size]
         batch_data = yf.download(batch, start=start_date, end=end_date, timeout=30)
-        frames.append(batch_data['Close'])
+        frames.append(batch_data["Close"])
 
     data = pd.concat(frames, axis=1)
     # Drop tickers with >10% missing data, forward-fill the rest
@@ -579,7 +1091,9 @@ def download_data(dataset_dir, batch_size=50, datasets=None):
         _download_tickers(SP500_TICKERS, dataset_dir, batch_size=batch_size)
         return
 
-    target_dir = os.path.dirname(dataset_dir) if os.path.isfile(dataset_dir) else dataset_dir
+    target_dir = (
+        os.path.dirname(dataset_dir) if os.path.isfile(dataset_dir) else dataset_dir
+    )
     os.makedirs(target_dir, exist_ok=True)
 
     if datasets is None:
@@ -588,7 +1102,9 @@ def download_data(dataset_dir, batch_size=50, datasets=None):
     for name in datasets:
         tickers = DATASET_TICKERS.get(name)
         if tickers is None:
-            print(f"Unknown dataset '{name}', skipping. Available: {list(DATASET_TICKERS.keys())}")
+            print(
+                f"Unknown dataset '{name}', skipping. Available: {list(DATASET_TICKERS.keys())}"
+            )
             continue
         output_path = os.path.join(target_dir, f"{name}.csv")
         print(f"Downloading {name} ({len(tickers)} tickers)...")
@@ -704,8 +1220,10 @@ def optimize_market_regimes(
                 "scenario_generation_settings is required when using Mean-CVaR optimization"
             )
         risk_measure = "CVaR"
-        from . import cvar_optimizer  # Lazy import
-        from . import cvar_utils  # For generate_cvar_data
+        from . import (
+            cvar_optimizer,  # Lazy import
+            cvar_utils,  # For generate_cvar_data
+        )
     elif isinstance(params, MeanVarianceParameters):
         risk_measure = "variance"
         from . import mean_variance_optimizer  # Lazy import
@@ -725,7 +1243,9 @@ def optimize_market_regimes(
             solver_obj = settings["solver"]
             return str(solver_obj).replace("cp.", "").replace("solvers.", "")
         else:
-            raise ValueError(f"Please provide a solver name in the format 'solver': <solver_name>")
+            raise ValueError(
+                "Please provide a solver name in the format 'solver': <solver_name>"
+            )
 
     # Build column names dynamically based on solvers
     columns = ["regime"]

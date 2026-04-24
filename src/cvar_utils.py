@@ -81,15 +81,15 @@ def generate_samples_kde(
 
     if kde_device == "CPU":
         start_time = time.time()
-        #fit kde and sample from it
+        # fit kde and sample from it
         kde = sklearn.neighbors.KernelDensity(kernel=kernel, bandwidth=bandwidth).fit(
             returns_data
         )
         new_samples = kde.sample(num_scen)
-        
+
         end_time = time.time()
         kde_time = end_time - start_time
-        
+
         if verbose:
             print(f"KDE fit on CPU in {kde_time} seconds.")
 
@@ -99,9 +99,9 @@ def generate_samples_kde(
 
         start_time = time.time()
         with cuml.using_output_type("numpy"):
-            kde = cuml.neighbors.KernelDensity(
-                kernel=kernel, bandwidth=bandwidth
-            ).fit(returns_data)
+            kde = cuml.neighbors.KernelDensity(kernel=kernel, bandwidth=bandwidth).fit(
+                returns_data
+            )
             new_samples = kde.sample(num_scen)
 
         end_time = time.time()
@@ -293,9 +293,9 @@ def optimize_market_regimes(
 
             # Set up optimization problem
             cvar_problem = cvar_optimizer.CVaR(
-                        returns_dict=returns_dict, cvar_params=cvar_params
+                returns_dict=returns_dict, cvar_params=cvar_params
             )
-        
+
             # Solve optimization problem
             try:
                 result, portfolio = cvar_problem.solve_optimization_problem(
@@ -778,15 +778,19 @@ def create_efficient_frontier(
 
     # Color schemes
     color_schemes = {
-            "modern": {
-                "frontier": "#7cd7fe",
-                "benchmark": ["#ef9100", "#ff8181", "#0d8473"], #NVIDIA orange, red, dark teal
-                "assets": "#c359ef",
-                "custom": "#fc79ca",
-                "background": "#FFFFFF",
-                "grid": "#E0E0E0",
-            }
+        "modern": {
+            "frontier": "#7cd7fe",
+            "benchmark": [
+                "#ef9100",
+                "#ff8181",
+                "#0d8473",
+            ],  # NVIDIA orange, red, dark teal
+            "assets": "#c359ef",
+            "custom": "#fc79ca",
+            "background": "#FFFFFF",
+            "grid": "#E0E0E0",
         }
+    }
     colors = color_schemes[color_scheme]
 
     # Set style
