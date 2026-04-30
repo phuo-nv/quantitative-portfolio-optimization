@@ -574,6 +574,24 @@ def _render_rebalancing_frame(
         return buf.getvalue()
 
 
+def _prepare_cumulative_period(cumulative_dates, period_values, period_dates):
+    """Drop duplicated period-boundary anchors before appending plot data."""
+    period_values = list(period_values)
+    period_dates = list(period_dates)
+
+    if cumulative_dates and period_dates:
+        if pd.Timestamp(cumulative_dates[-1]) == pd.Timestamp(period_dates[0]):
+            period_values = period_values[1:]
+            period_dates = period_dates[1:]
+
+    return period_values, period_dates
+
+
+def _backtester_cumulative_dates(backtester):
+    dates = getattr(backtester, "cumulative_dates", None)
+    return list(dates if dates is not None else backtester._dates)
+
+
 def get_available_datasets():
     try:
         data_dir = workspace_root / "data" / "stock_data"
@@ -898,8 +916,15 @@ def create_rebalancing_progressive(
                 else bt_result["cumulative returns"]
             )
             cur_cum = cum_ret_values * portfolio_value
-            cumulative_values = np.concatenate((cumulative_values, cur_cum))
-            cumulative_dates.extend(bt._dates)
+            period_values, period_dates = _prepare_cumulative_period(
+                cumulative_dates,
+                cur_cum,
+                _backtester_cumulative_dates(bt),
+            )
+            cumulative_values = np.concatenate(
+                (cumulative_values, np.asarray(period_values))
+            )
+            cumulative_dates.extend(period_dates)
 
             # Compute pct change and transaction cost for this period
             pct_change_raw = r._calculate_pct_change(bt_result)
@@ -1226,8 +1251,15 @@ def create_rebalancing_progressive(
                     else bt_result["cumulative returns"]
                 )
                 cur_cum = cum_ret_values * portfolio_value
-                cumulative_values = np.concatenate((cumulative_values, cur_cum))
-                cumulative_dates.extend(bt._dates)
+                period_values, period_dates = _prepare_cumulative_period(
+                    cumulative_dates,
+                    cur_cum,
+                    _backtester_cumulative_dates(bt),
+                )
+                cumulative_values = np.concatenate(
+                    (cumulative_values, np.asarray(period_values))
+                )
+                cumulative_dates.extend(period_dates)
 
                 # Redraw the plot with the final segment included
                 with _matplotlib_lock:
@@ -1468,13 +1500,17 @@ def create_rebalancing_cpu_worker(
                 else bt_result["cumulative returns"]
             )
             cur_cum = (cum_ret_values * portfolio_value).tolist()
-            cumulative_values.extend(cur_cum)
-            cumulative_dates.extend(
-                [
-                    d.isoformat() if hasattr(d, "isoformat") else str(d)
-                    for d in bt._dates
-                ]
+            period_dates = [
+                d.isoformat() if hasattr(d, "isoformat") else str(d)
+                for d in _backtester_cumulative_dates(bt)
+            ]
+            period_values, period_dates = _prepare_cumulative_period(
+                cumulative_dates,
+                cur_cum,
+                period_dates,
             )
+            cumulative_values.extend(period_values)
+            cumulative_dates.extend(period_dates)
 
             pct_change_raw = r._calculate_pct_change(bt_result)
             pct_change = (
@@ -1667,13 +1703,17 @@ def create_rebalancing_cpu_worker(
                     else bt_result["cumulative returns"]
                 )
                 cur_cum = (cum_ret_values * portfolio_value).tolist()
-                cumulative_values.extend(cur_cum)
-                cumulative_dates.extend(
-                    [
-                        d.isoformat() if hasattr(d, "isoformat") else str(d)
-                        for d in bt._dates
-                    ]
+                period_dates = [
+                    d.isoformat() if hasattr(d, "isoformat") else str(d)
+                    for d in _backtester_cumulative_dates(bt)
+                ]
+                period_values, period_dates = _prepare_cumulative_period(
+                    cumulative_dates,
+                    cur_cum,
+                    period_dates,
                 )
+                cumulative_values.extend(period_values)
+                cumulative_dates.extend(period_dates)
             except Exception:
                 pass
 
